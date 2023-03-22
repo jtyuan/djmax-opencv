@@ -2,10 +2,10 @@ import numpy as np
 import win32con
 import win32gui
 import win32ui
+from ultralytics.yolo.data.augment import LetterBox
 
 
 class WindowCapture:
-
     # properties
     w = 0
     h = 0
@@ -44,7 +44,6 @@ class WindowCapture:
         return self.get_screenshot()
 
     def get_screenshot(self):
-
         # get the window image data
         wDC = win32gui.GetWindowDC(self.hwnd)
         dcObj = win32ui.CreateDCFromHandle(wDC)
@@ -55,7 +54,7 @@ class WindowCapture:
         cDC.BitBlt((0, 0), (self.w, self.h), dcObj, (self.cropped_x, self.cropped_y), win32con.SRCCOPY)
 
         # convert the raw data into a format opencv can read
-        #dataBitMap.SaveBitmapFile(cDC, 'debug.bmp')
+        # dataBitMap.SaveBitmapFile(cDC, 'debug.bmp')
         signedIntsArray = dataBitMap.GetBitmapBits(True)
         img = np.fromstring(signedIntsArray, dtype='uint8')
         img.shape = (self.h, self.w, 4)
@@ -69,7 +68,7 @@ class WindowCapture:
         # drop the alpha channel, or cv.matchTemplate() will throw an error like:
         #   error: (-215:Assertion failed) (depth == CV_8U || depth == CV_32F) && type == _templ.type()
         #   && _img.dims() <= 2 in function 'cv::matchTemplate'
-        img = img[...,:3]
+        img = img[..., :3]
 
         # make image C_CONTIGUOUS to avoid errors that look like:
         #   File ... in draw_rectangles
@@ -79,3 +78,45 @@ class WindowCapture:
         img = np.ascontiguousarray(img)
 
         return img
+
+
+class LoadWindowScreenshots:
+    # Load screenshots from a specific window by name
+    def __init__(self, source, imgsz=640, stride=32, auto=True, transforms=None):
+        self.source = source
+        self.sources = source
+        self.imgsz = imgsz
+        self.stride = stride
+        self.transforms = transforms
+        self.auto = auto
+        self.mode = 'stream'
+        self.cap = WindowCapture(source)
+        self.s = f'window {self.source}: '
+        print('transforms', transforms)
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        # mss screen capture: get raw pixels from the screen as np array
+        im0 = self.cap.get_screenshot()
+
+        if self.transforms:
+            im = self.transforms(im0)  # transforms
+        else:
+            im = LetterBox(self.imgsz, self.auto, stride=self.stride)(image=im0)
+            im = im.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
+            im = np.ascontiguousarray(im)  # contiguous
+        return self.source, im, im0, self.cap, self.s  # screen, img, original img, im0s, s
+
+
+if __name__ == '__main__':
+    l = LoadWindowScreenshots('Bandizip (Standard)')
+    import cv2
+
+    while True:
+        for t in l:
+            cv2.imshow('test', t[1][0])
+            cv2.imshow('test2', t[2])
+            if cv2.waitKey(1) == ord('q'):  # 1 millisecond
+                exit()
