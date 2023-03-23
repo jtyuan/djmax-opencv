@@ -10,4 +10,4 @@ deepocsort:
   max_age: 30
   min_hits: 3
   use_byte: false
-  speed_prior: [0, 51, 0, 0]
+  speed_prior: [0, 113, 0, 0]

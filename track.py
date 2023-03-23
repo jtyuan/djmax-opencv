@@ -3,6 +3,8 @@ import os
 
 import cv2
 
+from vmacro.config import GameConfig
+from vmacro.game import Game
 from vmacro.window_cap import LoadWindowScreenshots
 
 # limit the number of cpus used by high performance libraries
@@ -32,7 +34,7 @@ if str(ROOT / 'trackers' / 'strongsort') not in sys.path:
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
 from ultralytics.nn.autobackend import AutoBackend
-from ultralytics.yolo.data.dataloaders.stream_loaders import LoadImages, LoadStreams
+from ultralytics.yolo.data.dataloaders.stream_loaders import LoadImages, LoadStreams, LoadScreenshots
 from ultralytics.yolo.data.utils import VID_FORMATS
 from ultralytics.yolo.utils import LOGGER, colorstr
 from ultralytics.yolo.utils.checks import check_file, check_imgsz, check_imshow, print_args, check_requirements
@@ -80,7 +82,7 @@ def run(
     dnn=False,  # use OpenCV DNN for ONNX inference
     vid_stride=1,  # video frame-rate stride
     retina_masks=False,
-    process_tracking=None,
+    fullscreen=False,
 ):
     source = str(source)
     save_img = not nosave and not source.endswith('.txt')  # save inference images
@@ -109,9 +111,19 @@ def run(
     stride, names, pt = model.stride, model.names, model.pt
     imgsz = check_imgsz(imgsz, stride=stride)  # check image size
 
+    game = Game(GameConfig('4B', 'left'), names)
+
     # Dataloader
     bs = 1
-    if webcam:
+    if fullscreen:
+        dataset = LoadScreenshots(
+            source='0 0 0 1920 1080',
+            imgsz=imgsz,
+            stride=stride,
+            auto=pt,
+            transforms=getattr(model.model, 'transforms', None),
+        )
+    elif webcam:
         show_vid = check_imshow(warn=True)
         dataset = LoadStreams(
             source,
@@ -235,8 +247,8 @@ def run(
 
                 # draw boxes for visualization
                 if len(outputs[i]) > 0:
-                    if process_tracking:
-                        process_tracking(outputs[i])
+                    # outputs[i]: list of [x1, y1, x2, y2, track_id, class_id, conf, queue]
+                    game.process(outputs[i])
 
                     if is_seg:
                         # Mask plotting
@@ -370,6 +382,7 @@ def parse_opt():
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
     parser.add_argument('--vid-stride', type=int, default=1, help='video frame-rate stride')
     parser.add_argument('--retina-masks', action='store_true', help='whether to plot masks in native resolution')
+    parser.add_argument('--fullscreen', action='store_true')
     opt = parser.parse_args()
     opt.imgsz *= 2 if len(opt.imgsz) == 1 else 1  # expand
     opt.tracking_config = ROOT / 'trackers' / opt.tracking_method / 'configs' / (opt.tracking_method + '.yaml')

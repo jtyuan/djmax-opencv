@@ -18,7 +18,8 @@ class WindowCapture:
     # constructor
     def __init__(self, window_name):
         # find the handle for the window we want to capture
-        self.hwnd = win32gui.FindWindow(None, window_name)
+        # self.hwnd = win32gui.FindWindow(None, window_name)
+        self.hwnd = 0x300d4
         if not self.hwnd:
             raise Exception('Window not found: {}'.format(window_name))
 
@@ -28,12 +29,14 @@ class WindowCapture:
         self.h = window_rect[3] - window_rect[1]
 
         # account for the window border and titlebar and cut them off
-        border_pixels = 8
-        titlebar_pixels = 30
+        border_pixels = 9
+        titlebar_pixels = 37
         self.w = self.w - (border_pixels * 2)
         self.h = self.h - titlebar_pixels - border_pixels
         self.cropped_x = border_pixels
         self.cropped_y = titlebar_pixels
+
+        print(self.w, self.h)
 
         # set the cropped coordinates offset so we can translate screenshot
         # images into actual screen positions
@@ -107,16 +110,16 @@ class LoadWindowScreenshots:
             im = LetterBox(self.imgsz, self.auto, stride=self.stride)(image=im0)
             im = im.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
             im = np.ascontiguousarray(im)  # contiguous
-        return self.source, im, im0, self.cap, self.s  # screen, img, original img, im0s, s
+        return self.source, im, im0, None, self.s  # screen, img, original img, im0s, s
 
 
 if __name__ == '__main__':
-    l = LoadWindowScreenshots('Bandizip (Standard)')
+    l = LoadWindowScreenshots('PS Remote Play')
     import cv2
 
     while True:
         for t in l:
-            cv2.imshow('test', t[1][0])
+            # cv2.imshow('test', t[1][0])
             cv2.imshow('test2', t[2])
             if cv2.waitKey(1) == ord('q'):  # 1 millisecond
                 exit()
