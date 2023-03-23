@@ -2,12 +2,12 @@
 # HOTA, MOTA, IDF1:  [55.567]
 deepocsort:
   asso_func: giou
-  conf_thres: 0.5122620708221085
-  delta_t: 1
+  conf_thres: 0.7122620708221085
+  delta_t: 2
   det_thresh: 0
   inertia: 0.3941737016672115
   iou_thresh: 0.22136877277096445
-  max_age: 30
+  max_age: 20
   min_hits: 3
   use_byte: false
-  speed_prior: [0, 113, 0, 0]
+  speed_prior: [0, 56, 0, 0]

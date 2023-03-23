@@ -51,12 +51,14 @@ class LoadScreenshots:
         self.frame += 1
         return str(self.screen), im, im0, None, s  # screen, img, original img, im0s, s
 
+
 if __name__ == '__main__':
     l = LoadScreenshots('0 0 0 1920 1080')
     import cv2
 
     while True:
         for t in l:
-            cv2.imshow('test2', t[2])
+            img = cv2.flip(t[2], 0)
+            cv2.imshow('test2', img)
             if cv2.waitKey(1) == ord('q'):  # 1 millisecond
                 exit()

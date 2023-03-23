@@ -9,7 +9,7 @@ import win32con
 from apscheduler.schedulers.background import BackgroundScheduler
 from loguru import logger
 
-from vmacro.config import CLICK_DELAY, TrackConfig
+from vmacro.config import CLICK_DELAY, TrackConfig, CONTROL_DELAY
 from vmacro.note import Note
 
 
@@ -24,7 +24,7 @@ class KeyState(Enum):
     UP = 1
 
 
-THROTTLE_DELAY_NS = 20 * 1e6  # 20ms
+THROTTLE_DELAY_NS = 50 * 1e6  # 20ms
 
 
 class Track:
@@ -39,7 +39,9 @@ class Track:
         self._status = KeyState.UP
         self._scheduler = scheduler
 
-    def schedule(self, note: Note, speed: float):
+        self._avg_speed = config.avg_speed
+
+    def schedule(self, note: Note, speed: float = 0):
         # action: KeyAction, delay: float
         if note.cls in {'hold-start', 'side-start', 'tbstart', 'xstart'}:
             action = KeyAction.KEYDOWN
@@ -47,10 +49,11 @@ class Track:
             action = KeyAction.KEYUP
         else:
             action = KeyAction.KEYPRESS
-        delay = (self._bbox[3] - note.bbox[3]) / speed
+        speed = speed if speed >= 0 else self._avg_speed
+        delay = max((self._bbox[3] - note.bbox[3]) / self._avg_speed - CONTROL_DELAY, 30)
         logger.debug(
             "Schedule note {} <{}> of speed {} to {} after {}",
-            self._key, note, speed, action, delay,
+            self._key, note, self._avg_speed, action, delay,
         )
         self._scheduler.add_job(
             lambda: self._execute(action),
@@ -107,7 +110,8 @@ class Track:
             elif action is KeyAction.KEYDOWN:
                 self.keydown()
                 self._status = KeyState.DOWN
-            else:
-                # state is UP and action in {KEYUP, KEYPRESS}, always press (KEYUP can be detection error)
+            elif action is KeyAction.KEYPRESS:
                 self.keypress()
                 self._status = KeyState.UP
+            else:  # ignore Keyup when status is already up. Can be a previously missed keydown
+                pass

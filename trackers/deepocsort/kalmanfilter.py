@@ -366,10 +366,14 @@ class KalmanFilterNew(object):
             Q = eye(self.dim_x) * Q
 
         # x = Fx + Bu
+        self.x[4, 0] = 0
+        self.x[5, 0] = 56
         if B is not None and u is not None:
             self.x = dot(F, self.x) + dot(B, u)
         else:
             self.x = dot(F, self.x)
+        # print('before', self.x_prior)
+        # print('after', self.x)
 
         # P = FPF' + Q
         self.P = self._alpha_sq * dot(dot(F, self.P), F.T) + Q

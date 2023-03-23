@@ -36,8 +36,9 @@ class Game:
 
         self._scheduler.add_job(self._fever, 'interval', seconds=1)
 
-        self._scheduler.add_job(self._fever, 'interval', seconds=1)
         self._scheduler.start()
+
+        self._last_scheduled = time.monotonic_ns()
 
     def _fever(self):
         # win32api.PostMessage(self._target_hwnd, win32con.WM_KEYDOWN, FEVER_KEY, 0)
@@ -61,6 +62,14 @@ class Game:
                     cls=node_cls,
                     timestamp=time.monotonic_ns(),
                 )
+
+                if len(self._notes_history[node_id]) > 0:
+                    # Note did not move
+                    logger.debug("{} {} {} {}", node_id, len(self._notes_history[node_id]),
+                                 self._notes_history[node_id][-1].bbox, note.bbox)
+                    if self._notes_history[node_id][-1].bbox[3] - note.bbox[3] <= 1e-6:
+                        del self._notes_history[node_id][-1]
+
                 self._notes_history[node_id].append(note)
 
                 # print("note: {}; hist len: {}", note, len(self._notes_history[node_id]))
@@ -69,9 +78,34 @@ class Game:
                     track = self._assign_track(note)
                     if track:
                         first_note = self._notes_history[node_id][0]
-                        # speed = (note.bbox[3] - first_note.bbox[3]) / (note.timestamp - first_note.timestamp) * 1e6
-                        track.schedule(note, 1.0)
+                        speed = (note.bbox[3] - first_note.bbox[3]) / (note.timestamp - first_note.timestamp) * 1e6
+                        logger.debug("observed speed: {}; pre-calculated speed:{}", speed, self._config.avg_speed)
+                        track.schedule(note)
                     self._notes_history.pop(node_id)
+
+    def process_dets(self, dets):
+        now = time.monotonic_ns()
+        if now - self._last_scheduled < 300 * 1e6:
+            return
+        self._last_scheduled = now
+        for det in dets:
+            conf = det[4]
+            # print("processing: {}", det)1
+            bbox = det[:4]
+            node_cls = self._class_names[det[5]]
+            note = Note(
+                id=-1,
+                bbox=bbox,
+                cls=node_cls,
+                timestamp=time.monotonic_ns(),
+            )
+            if note.bbox[3] >= self._config.bbox[3] * 0.8:
+                continue
+
+            # print("note: {}; hist len: {}", note, len(self._notes_history[node_id]))
+            track = self._assign_track(note)
+            if track:
+                track.schedule(note)
 
     def _assign_track(self, note: Note):
         result = None

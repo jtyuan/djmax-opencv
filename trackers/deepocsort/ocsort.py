@@ -439,7 +439,7 @@ class OCSort(object):
         else:
             stage1_emb_cost = dets_embs @ trk_embs.T
 
-        print('dets:', dets)
+        # print('dets:', dets)
         # print('trks:', trks)
         # print('velocities:', velocities)
         # print('k_obs:', k_observations)

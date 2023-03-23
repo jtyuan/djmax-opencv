@@ -5,8 +5,8 @@ import numpy as np
 
 from vmacro.note import NoteClass
 
-# delay (ms) before executing key control commands
-DEFAULT_DELAY = 0
+# network delay (ms) for executing key control commands
+CONTROL_DELAY = 220
 
 # delay (ms) for immediate releasing a key (key click)
 CLICK_DELAY = 30
@@ -20,7 +20,6 @@ NOTE_CLASS_GROUP: dict[str, set[NoteClass]] = {
     'tb': {'tbnote', 'tbstart', 'tbend'},
     'extra': {'xnote', 'xstart', 'xend'},
 }
-
 
 KEY_NOTE_MAP: dict[str, set[NoteClass]] = {
     's': NOTE_CLASS_GROUP['note'],
@@ -57,10 +56,12 @@ key_configs['4X'] = key_configs['4B'] + [['v', 'n']]
 
 key_configs['8B'] = key_configs['6B'] + [['v', 'n']]
 
+key_configs['XB'] = key_configs['8B'] + [['1', '2']]
+
 BoardLocation = Literal['left', 'middle', 'right']
 
 location_bbox: dict[BoardLocation, Tuple[float, float, float, float]] = {
-    'left': (120.0, 0.0, 600.0, 753.0 - 100),
+    'left': (120.0, 0.0, 600.0, 753.0),
     # 'left': (102.0, 0.0, 494.0, 631.0),
     'middle': (0.0, 0.0, 0.0, 0.0),
     'right': (0.0, 0.0, 0.0, 0.0),
@@ -72,20 +73,38 @@ class TrackConfig:
     key: str
     bbox: np.ndarray
     note_classes: set[NoteClass]
+    avg_speed: float
+
+
+FALL_TIME = 1151  # 885 # 1130  # ms
 
 
 class GameConfig:
-    def __init__(self, mode, location):
+    def __init__(self, mode, location, note_lifetime=FALL_TIME):
         self.mode = mode
         self.location = location
         self.bbox = location_bbox[location]
+
+        mode_key_num = sum(len(keys) for keys in key_configs[mode])
+        if isinstance(note_lifetime, list):
+            if len(note_lifetime) == 1:
+                self.note_lifetime = note_lifetime * mode_key_num
+            elif len(note_lifetime) == mode_key_num:
+                self.note_lifetime = note_lifetime
+            else:
+                raise ValueError(f"--note-lifetime must match the number of tracks of mode ‘{mode}’")
+        else:
+            self.note_lifetime = [note_lifetime] * mode_key_num
+
         self.track_configs = self._init_track_configs(mode, self.bbox[0], self.bbox[2])
+        self.note_lifetime = note_lifetime
 
     def _init_track_configs(self, mode, start, end):
         length = end - start
         key_config = key_configs[mode]
 
         tracks = []
+        j = 0
         for keys in key_config:
             track_start = start
             track_len = length / len(keys)
@@ -95,8 +114,10 @@ class GameConfig:
                     key=key,
                     note_classes=KEY_NOTE_MAP[key],
                     bbox=np.array([track_start, self.bbox[1], track_end, self.bbox[3]]),
+                    avg_speed=self.bbox[3] / self.note_lifetime[j],
                 ))
                 track_start = track_end
+                j += 1
 
         return tracks
 

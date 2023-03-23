@@ -26,8 +26,6 @@ WEIGHTS = ROOT / 'weights'
 
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))  # add ROOT to PATH
-if str(ROOT / 'yolov8') not in sys.path:
-    sys.path.append(str(ROOT / 'yolov8'))  # add yolov5 ROOT to PATH
 if str(ROOT / 'trackers' / 'strongsort') not in sys.path:
     sys.path.append(str(ROOT / 'trackers' / 'strongsort'))  # add strong_sort ROOT to PATH
 
@@ -49,40 +47,42 @@ from trackers.multi_tracker_zoo import create_tracker
 
 @torch.no_grad()
 def run(
-    source='0',
-    yolo_weights=WEIGHTS / 'yolov5m.pt',  # model.pt path(s),
-    reid_weights=WEIGHTS / 'osnet_x0_25_msmt17.pt',  # model.pt path,
-    tracking_method='strongsort',
-    tracking_config=None,
-    imgsz=(640, 640),  # inference size (height, width)
-    conf_thres=0.25,  # confidence threshold
-    iou_thres=0.45,  # NMS IOU threshold
-    max_det=1000,  # maximum detections per image
-    device='',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
-    show_vid=False,  # show results
-    save_txt=False,  # save results to *.txt
-    save_conf=False,  # save confidences in --save-txt labels
-    save_crop=False,  # save cropped prediction boxes
-    save_trajectories=False,  # save trajectories for each track
-    save_vid=False,  # save confidences in --save-txt labels
-    nosave=False,  # do not save images/videos
-    classes=None,  # filter by class: --class 0, or --class 0 2 3
-    agnostic_nms=False,  # class-agnostic NMS
-    augment=False,  # augmented inference
-    visualize=False,  # visualize features
-    update=False,  # update all models
-    project=ROOT / 'runs' / 'track',  # save results to project/name
-    name='exp',  # save results to project/name
-    exist_ok=False,  # existing project/name ok, do not increment
-    line_thickness=2,  # bounding box thickness (pixels)
-    hide_labels=False,  # hide labels
-    hide_conf=False,  # hide confidences
-    hide_class=False,  # hide IDs
-    half=False,  # use FP16 half-precision inference
-    dnn=False,  # use OpenCV DNN for ONNX inference
-    vid_stride=1,  # video frame-rate stride
-    retina_masks=False,
-    fullscreen=False,
+        source='0',
+        yolo_weights=WEIGHTS / 'yolov5m.pt',  # model.pt path(s),
+        reid_weights=WEIGHTS / 'osnet_x0_25_msmt17.pt',  # model.pt path,
+        tracking_method='strongsort',
+        tracking_config=None,
+        imgsz=(640, 640),  # inference size (height, width)
+        conf_thres=0.25,  # confidence threshold
+        iou_thres=0.45,  # NMS IOU threshold
+        max_det=1000,  # maximum detections per image
+        device='',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
+        show_vid=False,  # show results
+        save_txt=False,  # save results to *.txt
+        save_conf=False,  # save confidences in --save-txt labels
+        save_crop=False,  # save cropped prediction boxes
+        save_trajectories=False,  # save trajectories for each track
+        save_vid=False,  # save confidences in --save-txt labels
+        nosave=False,  # do not save images/videos
+        classes=None,  # filter by class: --class 0, or --class 0 2 3
+        agnostic_nms=False,  # class-agnostic NMS
+        augment=False,  # augmented inference
+        visualize=False,  # visualize features
+        update=False,  # update all models
+        project=ROOT / 'runs' / 'track',  # save results to project/name
+        name='exp',  # save results to project/name
+        exist_ok=False,  # existing project/name ok, do not increment
+        line_thickness=2,  # bounding box thickness (pixels)
+        hide_labels=False,  # hide labels
+        hide_conf=False,  # hide confidences
+        hide_class=False,  # hide IDs
+        half=False,  # use FP16 half-precision inference
+        dnn=False,  # use OpenCV DNN for ONNX inference
+        vid_stride=1,  # video frame-rate stride
+        retina_masks=False,
+        fullscreen=False,
+        game_mode='4B',
+        no_tracking=False,
 ):
     source = str(source)
     save_img = not nosave and not source.endswith('.txt')  # save inference images
@@ -104,14 +104,14 @@ def run(
     save_dir = increment_path(Path(project) / exp_name, exist_ok=exist_ok)  # increment run
     (save_dir / 'tracks' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
 
-    # Load model
+    # Load modela
     device = select_device(device)
     is_seg = '-seg' in str(yolo_weights)
     model = AutoBackend(yolo_weights, device=device, dnn=dnn, fp16=half)
     stride, names, pt = model.stride, model.names, model.pt
     imgsz = check_imgsz(imgsz, stride=stride)  # check image size
 
-    game = Game(GameConfig('4B', 'left'), names)
+    game = Game(GameConfig(game_mode, 'left'), names)
 
     # Dataloader
     bs = 1
@@ -241,60 +241,93 @@ def run(
                     n = (det[:, 5] == c).sum()  # detections per class
                     s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "  # add to string
 
-                # pass detections to strongsort
-                with dt[3]:
-                    outputs[i] = tracker_list[i].update(det.cpu(), im0)
+                if no_tracking:
+                    # det: [x1, y1, x2, y2, conf, class_id]
+                    game.process_dets(det.cpu().numpy())
 
-                # draw boxes for visualization
-                if len(outputs[i]) > 0:
-                    # outputs[i]: list of [x1, y1, x2, y2, track_id, class_id, conf, queue]
-                    game.process(outputs[i])
-
-                    if is_seg:
-                        # Mask plotting
-                        annotator.masks(
-                            masks[i],
-                            colors=[colors(x, True) for x in det[:, 5]],
-                            im_gpu=torch.as_tensor(im0, dtype=torch.float16).to(device).permute(2, 0, 1).flip(
-                                0).contiguous() /
-                                   255 if retina_masks else im[i]
-                        )
-
-                    for j, (output) in enumerate(outputs[i]):
-
-                        bbox = output[0:4]
-                        id = output[4]
-                        cls = output[5]
-                        conf = output[6]
+                    for j, d in enumerate(det):
+                        bbox = d[0:4]
+                        conf = d[4]
+                        cls = d[5]
 
                         if save_txt:
-                            # to MOT format
-                            bbox_left = output[0]
-                            bbox_top = output[1]
-                            bbox_w = output[2] - output[0]
-                            bbox_h = output[3] - output[1]
+                            bbox_left = d[0]
+                            bbox_top = d[1]
+                            bbox_w = d[2] - d[0]
+                            bbox_h = d[3] - d[1]
                             # Write MOT compliant results to file
                             with open(txt_path + '.txt', 'a') as f:
-                                f.write(('%g ' * 10 + '\n') % (frame_idx + 1, id, bbox_left,  # MOT format
-                                                               bbox_top, bbox_w, bbox_h, -1, -1, -1, i))
+                                f.write(('%g ' * 7 + '\n') % (frame_idx + 1, bbox_left,
+                                                              bbox_top, bbox_w, bbox_h, conf, cls))
 
                         if save_vid or save_crop or show_vid:  # Add bbox/seg to image
                             c = int(cls)  # integer class
-                            id = int(id)  # integer id
-                            label = None if hide_labels else (f'{id} {names[c]}' if hide_conf else \
-                                                                  (
-                                                                      f'{id} {conf:.2f}' if hide_class else f'{id} {names[c]} {conf:.2f}'))
+                            label = None if hide_labels else (f'{names[c]}' if hide_conf else (
+                                                                      f'{conf:.2f}' if hide_class else f'{names[c]} {conf:.2f}'))
                             color = colors(c, True)
                             annotator.box_label(bbox, label, color=color)
 
-                            if save_trajectories and tracking_method == 'strongsort':
-                                q = output[7]
-                                tracker_list[i].trajectory(im0, q, color=color)
                             if save_crop:
                                 txt_file_name = txt_file_name if (isinstance(path, list) and len(path) > 1) else ''
                                 save_one_box(np.array(bbox, dtype=np.int16), imc,
                                              file=save_dir / 'crops' / txt_file_name / names[
-                                                 c] / f'{id}' / f'{p.stem}.jpg', BGR=True)
+                                                 c] / f'{p.stem}.jpg', BGR=True)
+
+                else:
+                    # pass detections to strongsort
+                    with dt[3]:
+                        outputs[i] = tracker_list[i].update(det.cpu(), im0)
+
+                    # draw boxes for visualization
+                    if len(outputs[i]) > 0:
+                        # outputs[i]: list of [x1, y1, x2, y2, track_id, class_id, conf, queue]
+                        game.process(outputs[i])
+
+                        if is_seg:
+                            # Mask plotting
+                            annotator.masks(
+                                masks[i],
+                                colors=[colors(x, True) for x in det[:, 5]],
+                                im_gpu=torch.as_tensor(im0, dtype=torch.float16).to(device).permute(2, 0, 1).flip(
+                                    0).contiguous() /
+                                       255 if retina_masks else im[i]
+                            )
+
+                        for j, (output) in enumerate(outputs[i]):
+
+                            bbox = output[0:4]
+                            id = output[4]
+                            cls = output[5]
+                            conf = output[6]
+
+                            if save_txt:
+                                # to MOT format
+                                bbox_left = output[0]
+                                bbox_top = output[1]
+                                bbox_w = output[2] - output[0]
+                                bbox_h = output[3] - output[1]
+                                # Write MOT compliant results to file
+                                with open(txt_path + '.txt', 'a') as f:
+                                    f.write(('%g ' * 10 + '\n') % (frame_idx + 1, id, bbox_left,  # MOT format
+                                                                   bbox_top, bbox_w, bbox_h, -1, -1, -1, i))
+
+                            if save_vid or save_crop or show_vid:  # Add bbox/seg to image
+                                c = int(cls)  # integer class
+                                id = int(id)  # integer id
+                                label = None if hide_labels else (f'{id} {names[c]}' if hide_conf else \
+                                                                      (
+                                                                          f'{id} {conf:.2f}' if hide_class else f'{id} {names[c]} {conf:.2f}'))
+                                color = colors(c, True)
+                                annotator.box_label(bbox, label, color=color)
+
+                                if save_trajectories and tracking_method == 'strongsort':
+                                    q = output[7]
+                                    tracker_list[i].trajectory(im0, q, color=color)
+                                if save_crop:
+                                    txt_file_name = txt_file_name if (isinstance(path, list) and len(path) > 1) else ''
+                                    save_one_box(np.array(bbox, dtype=np.int16), imc,
+                                                 file=save_dir / 'crops' / txt_file_name / names[
+                                                     c] / f'{id}' / f'{p.stem}.jpg', BGR=True)
 
             else:
                 pass
@@ -341,7 +374,8 @@ def run(
         s = f"\n{len(list((save_dir / 'tracks').glob('*.txt')))} tracks saved to {save_dir / 'tracks'}" if save_txt else ''
         LOGGER.info(f"Results saved to {colorstr('bold', save_dir)}{s}")
     if update:
-        strip_optimizer(yolo_weights)  # update model (to fix SourceChangeWarning)
+        pass
+        # strip_optimizer(yolo_weights)  # update model (to fix SourceChangeWarning)
 
 
 def parse_opt():
@@ -383,6 +417,10 @@ def parse_opt():
     parser.add_argument('--vid-stride', type=int, default=1, help='video frame-rate stride')
     parser.add_argument('--retina-masks', action='store_true', help='whether to plot masks in native resolution')
     parser.add_argument('--fullscreen', action='store_true')
+    parser.add_argument('--game-mode', type=str, default='4B', choices=['4B', '4X', '5B', '6B', '8B', 'XB'])
+    parser.add_argument('--no-tracking', action='store_true', help='play the game based only on detections')
+    parser.add_argument('--note-lifetime', nargs='+', type=float, help='the lifetime (ms) for the note on each track '
+                                                                       'from showing up to crossing the bottom line')
     opt = parser.parse_args()
     opt.imgsz *= 2 if len(opt.imgsz) == 1 else 1  # expand
     opt.tracking_config = ROOT / 'trackers' / opt.tracking_method / 'configs' / (opt.tracking_method + '.yaml')
