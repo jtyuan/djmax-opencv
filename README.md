@@ -31,3 +31,18 @@ YMMV
 > 3. Get "xeropresence/remoteplay-version-patcher" from https://github.com/xeropresence/remoteplay-version-patcher/releases/download/1.0.0/Release.zip
 > 4. extract and run the remoteplay-version-patcher.exe file
 > 5. run remote play via PS4KMA and it works
+
+## Run
+
+```bash
+python ./track.py \
+  --yolo-weights '.\djmax1920.pt' \
+  --show-vid \
+  --class 0 1 2 3 4 8 9 10 \
+  --imgsz 1920 \
+  --fullscreen \
+  --save-vid \
+  --note-lifetime 1134 \
+  --game-mode 5X \
+  --no-tracking
+```
