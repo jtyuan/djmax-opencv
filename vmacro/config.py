@@ -6,13 +6,10 @@ import numpy as np
 from vmacro.note import NoteClass
 
 # network delay (ms) for executing key control commands
-CONTROL_DELAY = 280
+CONTROL_DELAY = 210  # 280
 
 # delay (ms) for immediate releasing a key (key click)
-CLICK_DELAY = 30
-
-start_y = 0
-end_y = 1080
+CLICK_DELAY = 50
 
 NOTE_CLASS_GROUP: dict[str, set[NoteClass]] = {
     'note': {'note', 'hold-start', 'hold-end'},
@@ -63,7 +60,7 @@ key_configs['XB'] = key_configs['8B'] + [['1', '2']]
 BoardLocation = Literal['left', 'middle', 'right']
 
 location_bbox: dict[BoardLocation, Tuple[float, float, float, float]] = {
-    'left': (120.0, 0.0, 600.0, 753.0),
+    'left': (80.0, 0.0, 560.0, 745.0),
     # 'left': (102.0, 0.0, 494.0, 631.0),
     'middle': (0.0, 0.0, 0.0, 0.0),
     'right': (0.0, 0.0, 0.0, 0.0),

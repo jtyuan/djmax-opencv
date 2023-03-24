@@ -1,5 +1,6 @@
 import argparse
 import os
+import time
 
 import cv2
 
@@ -89,7 +90,7 @@ def run(
     save_img = not nosave and not source.endswith('.txt')  # save inference images
     is_file = Path(source).suffix[1:] in VID_FORMATS
     is_url = source.lower().startswith(('rtsp://', 'rtmp://', 'http://', 'https://'))
-    webcam = source.isnumeric() or source.endswith('.txt') or (is_url and not is_file)
+    webcam = not fullscreen and source.isnumeric() or source.endswith('.txt') or (is_url and not is_file)
     is_window = not is_file and not is_url and not webcam
     if is_url and is_file:
         source = check_file(source)  # download
@@ -170,6 +171,8 @@ def run(
     seen, windows, dt = 0, [], (Profile(), Profile(), Profile(), Profile())
     curr_frames, prev_frames = [None] * bs, [None] * bs
     for frame_idx, batch in enumerate(dataset):
+        timestamp = time.time_ns() / 1e9  # s
+        perf_counter = time.perf_counter()  # s
         path, im, im0s, vid_cap, s = batch
         visualize = increment_path(save_dir / Path(path[0]).stem, mkdir=True) if visualize else False
         with dt[0]:
@@ -244,7 +247,7 @@ def run(
 
                 if no_tracking:
                     # det: [x1, y1, x2, y2, conf, class_id]
-                    game.process_dets(det.cpu().numpy())
+                    game.process_dets(det.cpu().numpy(), timestamp, perf_counter)
 
                     for j, d in enumerate(det):
                         bbox = d[0:4]

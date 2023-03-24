@@ -8,7 +8,7 @@ try:
 except ValueError:
     ...
 
-_logger.add(sys.stdout, level="DEBUG")
+_logger.add(sys.stdout, level="INFO")
 _logger.add("runs/logs/log_{time}.log", level="DEBUG")
 
 logger = _logger

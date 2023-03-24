@@ -4,6 +4,7 @@ import warnings
 import keyboard
 import win32api
 import win32gui
+from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from vmacro.config import GameConfig, CLICK_DELAY, FEVER_KEY
@@ -25,15 +26,13 @@ class Game:
         self._notes_history = {}
         self._scheduled_notes = set()
 
-        self._target_hwnd = win32gui.FindWindow(None, "Chiaki | Stream")
-        self._scheduler = BackgroundScheduler()
+        self._scheduler = BackgroundScheduler(executors={"default": ThreadPoolExecutor(96)})
 
         self._min_hits = 1
 
         tracks = []
         for track_config in config.track_configs:
             tracks.append(Track(
-                hwnd=self._target_hwnd,
                 config=track_config,
                 scheduler=self._scheduler,
             ))
@@ -60,7 +59,7 @@ class Game:
                     id=node_id,
                     bbox=bbox,
                     cls=node_cls,
-                    timestamp=time.time_ns() / 1e6,
+                    timestamp=time.monotonic_ns(),
                 )
 
                 if len(self._notes_history[node_id]) > 0:
@@ -83,7 +82,7 @@ class Game:
                         track.schedule(note)
                     self._notes_history.pop(node_id)
 
-    def process_dets(self, dets):
+    def process_dets(self, dets, timestamp, perf_counter):
         for det in dets:
             conf = det[4]
             # print("processing: {}", det)1
@@ -93,7 +92,7 @@ class Game:
                 id=-1,
                 bbox=bbox,
                 cls=node_cls,
-                timestamp=time.time_ns() / 1e6,
+                timestamp=perf_counter,
             )
             # if note.bbox[3] <= self._config.bbox[3] * 0.1:
             #     continue
@@ -101,7 +100,7 @@ class Game:
             # print("note: {}; hist len: {}", note, len(self._notes_history[node_id]))
             track = self._assign_track(note)
             if track:
-                track.schedule(note)
+                track.schedule(note, timestamp)
 
     def _assign_track(self, note: Note):
         result = None
