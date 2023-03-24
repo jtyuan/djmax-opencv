@@ -1,6 +1,5 @@
 import cv2 as cv
-from loguru import logger
-
+from vmacro.logger import logger
 
 class VideoCapture:
     def __init__(self, video_path: str):

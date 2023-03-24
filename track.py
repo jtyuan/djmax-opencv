@@ -83,6 +83,7 @@ def run(
         fullscreen=False,
         game_mode='4B',
         no_tracking=False,
+        note_lifetime=None,
 ):
     source = str(source)
     save_img = not nosave and not source.endswith('.txt')  # save inference images
@@ -111,7 +112,7 @@ def run(
     stride, names, pt = model.stride, model.names, model.pt
     imgsz = check_imgsz(imgsz, stride=stride)  # check image size
 
-    game = Game(GameConfig(game_mode, 'left'), names)
+    game = Game(GameConfig(game_mode, 'left', note_lifetime=note_lifetime), names)
 
     # Dataloader
     bs = 1
@@ -417,7 +418,7 @@ def parse_opt():
     parser.add_argument('--vid-stride', type=int, default=1, help='video frame-rate stride')
     parser.add_argument('--retina-masks', action='store_true', help='whether to plot masks in native resolution')
     parser.add_argument('--fullscreen', action='store_true')
-    parser.add_argument('--game-mode', type=str, default='4B', choices=['4B', '4X', '5B', '6B', '8B', 'XB'])
+    parser.add_argument('--game-mode', type=str, default='4B', choices=['4B', '4X', '5B', '5X', '6B', '8B', 'XB'])
     parser.add_argument('--no-tracking', action='store_true', help='play the game based only on detections')
     parser.add_argument('--note-lifetime', nargs='+', type=float, help='the lifetime (ms) for the note on each track '
                                                                        'from showing up to crossing the bottom line')

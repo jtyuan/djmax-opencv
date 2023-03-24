@@ -1,15 +1,20 @@
 import time
+import warnings
 
 import keyboard
 import win32api
-import win32con
 import win32gui
 from apscheduler.schedulers.background import BackgroundScheduler
-from loguru import logger
 
 from vmacro.config import GameConfig, CLICK_DELAY, FEVER_KEY
+from vmacro.logger import logger
 from vmacro.note import Note
 from vmacro.track import Track
+
+warnings.filterwarnings(
+    "ignore",
+    message="The localize method is no longer necessary, as this time zone supports the fold attribute",
+)
 
 
 class Game:
@@ -38,15 +43,10 @@ class Game:
 
         self._scheduler.start()
 
-        self._last_scheduled = time.monotonic_ns()
-
     def _fever(self):
-        # win32api.PostMessage(self._target_hwnd, win32con.WM_KEYDOWN, FEVER_KEY, 0)
         keyboard.press(FEVER_KEY)
         win32api.Sleep(CLICK_DELAY)
-        # win32api.PostMessage(self._target_hwnd, win32con.WM_KEYUP, FEVER_KEY, 0)
         keyboard.release(FEVER_KEY)
-        logger.debug("Fever!")
 
     def process(self, trks):
         for trk in trks:
@@ -60,7 +60,7 @@ class Game:
                     id=node_id,
                     bbox=bbox,
                     cls=node_cls,
-                    timestamp=time.monotonic_ns(),
+                    timestamp=time.time_ns() / 1e6,
                 )
 
                 if len(self._notes_history[node_id]) > 0:
@@ -84,10 +84,6 @@ class Game:
                     self._notes_history.pop(node_id)
 
     def process_dets(self, dets):
-        now = time.monotonic_ns()
-        if now - self._last_scheduled < 300 * 1e6:
-            return
-        self._last_scheduled = now
         for det in dets:
             conf = det[4]
             # print("processing: {}", det)1
@@ -97,10 +93,10 @@ class Game:
                 id=-1,
                 bbox=bbox,
                 cls=node_cls,
-                timestamp=time.monotonic_ns(),
+                timestamp=time.time_ns() / 1e6,
             )
-            if note.bbox[3] >= self._config.bbox[3] * 0.8:
-                continue
+            # if note.bbox[3] <= self._config.bbox[3] * 0.1:
+            #     continue
 
             # print("note: {}; hist len: {}", note, len(self._notes_history[node_id]))
             track = self._assign_track(note)

@@ -6,7 +6,7 @@ import numpy as np
 from vmacro.note import NoteClass
 
 # network delay (ms) for executing key control commands
-CONTROL_DELAY = 220
+CONTROL_DELAY = 280
 
 # delay (ms) for immediate releasing a key (key click)
 CLICK_DELAY = 30
@@ -53,6 +53,8 @@ key_configs = {
 }
 
 key_configs['4X'] = key_configs['4B'] + [['v', 'n']]
+
+key_configs['5X'] = key_configs['5B'] + [['v', 'n']]
 
 key_configs['8B'] = key_configs['6B'] + [['v', 'n']]
 
