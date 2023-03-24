@@ -7,6 +7,7 @@
 - [PyTorch 2.0.0 built with CUDA 11.8](https://pytorch.org/get-started/locally/)
 - [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
 - requirements.txt
+- [yolov8_trakcing](https://github.com/mikel-brostrom/yolov8_tracking) (copied necessary files into the project for customization)
 
 ### Remote Control
 
