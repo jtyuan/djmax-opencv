@@ -1,22 +1,18 @@
-import torch.nn as nn
-import torch
-from pathlib import Path
-import numpy as np
-from itertools import islice
-import torchvision.transforms as transforms
-import cv2
-import sys
-import torchvision.transforms as T
 from collections import OrderedDict, namedtuple
-import gdown
 from os.path import exists as file_exists
+from pathlib import Path
 
-
-from ultralytics.yolo.utils.checks import check_requirements, check_version
+import gdown
+import numpy as np
+import torch
+import torch.nn as nn
+import torchvision.transforms as T
 from ultralytics.yolo.utils import LOGGER
-from trackers.strongsort.deep.reid_model_factory import (show_downloadeable_models, get_model_url, get_model_name,
-                                                          download_url, load_pretrained_weights)
+from ultralytics.yolo.utils.checks import check_requirements, check_version
+
 from trackers.strongsort.deep.models import build_model
+from trackers.strongsort.deep.reid_model_factory import (show_downloadeable_models, get_model_url, get_model_name,
+                                                         load_pretrained_weights)
 
 
 def check_suffix(file='yolov5s.pt', suffix=('.pt',), msg=''):
@@ -42,9 +38,9 @@ class ReIDDetectMultiBackend(nn.Module):
 
         # Build transform functions
         self.device = device
-        self.image_size=(256, 128)
-        self.pixel_mean=[0.485, 0.456, 0.406]
-        self.pixel_std=[0.229, 0.224, 0.225]
+        self.image_size = (256, 128)
+        self.pixel_mean = [0.485, 0.456, 0.406]
+        self.pixel_std = [0.229, 0.224, 0.225]
         self.transforms = []
         self.transforms += [T.Resize(self.image_size)]
         self.transforms += [T.ToTensor()]
@@ -77,9 +73,9 @@ class ReIDDetectMultiBackend(nn.Module):
             # populate model arch with weights
             if w and w.is_file() and w.suffix == '.pt':
                 load_pretrained_weights(self.model, w)
-                
+
             self.model.to(device).eval()
-            self.model.half() if self.fp16 else  self.model.float()
+            self.model.half() if self.fp16 else self.model.float()
         elif self.jit:
             LOGGER.info(f'Loading {w} for TorchScript inference...')
             self.model = torch.jit.load(w)
@@ -87,7 +83,7 @@ class ReIDDetectMultiBackend(nn.Module):
         elif self.onnx:  # ONNX Runtime
             LOGGER.info(f'Loading {w} for ONNX Runtime inference...')
             cuda = torch.cuda.is_available() and device.type != 'cpu'
-            #check_requirements(('onnx', 'onnxruntime-gpu' if cuda else 'onnxruntime'))
+            # check_requirements(('onnx', 'onnxruntime-gpu' if cuda else 'onnxruntime'))
             import onnxruntime
             providers = ['CUDAExecutionProvider', 'CPUExecutionProvider'] if cuda else ['CPUExecutionProvider']
             self.session = onnxruntime.InferenceSession(str(w), providers=providers)
@@ -132,9 +128,10 @@ class ReIDDetectMultiBackend(nn.Module):
             batch_dim = get_batch(network)
             if batch_dim.is_static:
                 batch_size = batch_dim.get_length()
-            self.executable_network = ie.compile_model(network, device_name="CPU")  # device_name="MYRIAD" for Intel NCS2
+            self.executable_network = ie.compile_model(network,
+                                                       device_name="CPU")  # device_name="MYRIAD" for Intel NCS2
             self.output_layer = next(iter(self.executable_network.outputs))
-        
+
         elif self.tflite:
             LOGGER.info(f'Loading {w} for TensorFlow Lite inference...')
             try:  # https://coral.ai/docs/edgetpu/tflite-python/#update-existing-tf-lite-code-for-the-edge-tpu
@@ -147,11 +144,11 @@ class ReIDDetectMultiBackend(nn.Module):
             # Get input and output tensors.
             self.input_details = self.interpreter.get_input_details()
             self.output_details = self.interpreter.get_output_details()
-            
+
             # Test model on random input data.
-            input_data = np.array(np.random.random_sample((1,256,128,3)), dtype=np.float32)
+            input_data = np.array(np.random.random_sample((1, 256, 128, 3)), dtype=np.float32)
             self.interpreter.set_tensor(self.input_details[0]['index'], input_data)
-            
+
             self.interpreter.invoke()
 
             # The function `get_tensor()` returns a copy of the tensor data.
@@ -159,8 +156,7 @@ class ReIDDetectMultiBackend(nn.Module):
         else:
             print('This model framework is not supported yet!')
             exit()
-        
-        
+
     @staticmethod
     def model_type(p='path/to/model.pt'):
         # Return model type from model path, i.e. path='path/to/model.onnx' -> type=onnx
@@ -182,16 +178,15 @@ class ReIDDetectMultiBackend(nn.Module):
         images = images.to(self.device)
 
         return images
-    
-    
+
     def forward(self, im_batch):
-        
+
         # preprocess batch
         im_batch = self._preprocess(im_batch)
 
         # batch to half
         if self.fp16 and im_batch.dtype != torch.float16:
-           im_batch = im_batch.half()
+            im_batch = im_batch.half()
 
         # batch processing
         features = []
@@ -201,7 +196,8 @@ class ReIDDetectMultiBackend(nn.Module):
             features = self.model(im_batch)
         elif self.onnx:  # ONNX Runtime
             im_batch = im_batch.cpu().numpy()  # torch to numpy
-            features = self.session.run([self.session.get_outputs()[0].name], {self.session.get_inputs()[0].name: im_batch})[0]
+            features = \
+            self.session.run([self.session.get_outputs()[0].name], {self.session.get_inputs()[0].name: im_batch})[0]
         elif self.engine:  # TensorRT
             if True and im_batch.shape != self.bindings['images'].shape:
                 i_in, i_out = (self.model_.get_binding_index(x) for x in ('images', 'output'))

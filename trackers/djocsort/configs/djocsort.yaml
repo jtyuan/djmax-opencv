@@ -1,8 +1,8 @@
 # Trial number:      137
 # HOTA, MOTA, IDF1:  [55.567]
-deepocsort:
+djocsort:
   asso_func: giou
-  conf_thres: 0.7122620708221085
+  conf_thres: 0.7022620708221085
   delta_t: 2
   det_thresh: 0
   inertia: 0.3941737016672115
@@ -10,4 +10,3 @@ deepocsort:
   max_age: 20
   min_hits: 3
   use_byte: false
-  speed_prior: [0, 56, 0, 0]

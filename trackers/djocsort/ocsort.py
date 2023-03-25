@@ -3,9 +3,12 @@
 """
 from __future__ import print_function
 
-from reid_multibackend import ReIDDetectMultiBackend
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
+
 from .association import *
-from .cmc import CMCComputer
+from .reid_multibackend import ReIDDetectMultiBackend
 
 
 def k_previous_obs(observations, cur_age, k):
@@ -58,14 +61,6 @@ def convert_x_to_bbox(x, score=None):
         return np.array([x[0] - w / 2.0, x[1] - h / 2.0, x[0] + w / 2.0, x[1] + h / 2.0]).reshape((1, 4))
     else:
         return np.array([x[0] - w / 2.0, x[1] - h / 2.0, x[0] + w / 2.0, x[1] + h / 2.0, score]).reshape((1, 5))
-
-
-def speed_direction(bbox1, bbox2):
-    cx1, cy1 = (bbox1[0] + bbox1[2]) / 2.0, (bbox1[1] + bbox1[3]) / 2.0
-    cx2, cy2 = (bbox2[0] + bbox2[2]) / 2.0, (bbox2[1] + bbox2[3]) / 2.0
-    speed = np.array([cy2 - cy1, cx2 - cx1])
-    norm = np.sqrt((cy2 - cy1) ** 2 + (cx2 - cx1) ** 2) + 1e-6
-    return speed / norm
 
 
 def new_kf_process_noise(w, h, p=1 / 20, v=1 / 160):
@@ -198,18 +193,7 @@ class KalmanBoxTracker(object):
         if bbox is not None:
             self.frozen = False
             self.cls = cls
-            if self.last_observation.sum() >= 0:  # no previous observation
-                previous_box = None
-                for dt in range(self.delta_t, 0, -1):
-                    if self.age - dt in self.observations:
-                        previous_box = self.observations[self.age - dt]
-                        break
-                if previous_box is None:
-                    previous_box = self.last_observation
-                """
-                  Estimate the track speed direction with observations \Delta t steps away
-                """
-                self.velocity = speed_direction(previous_box, bbox)
+            self.velocity = np.array([1, 0])
             """
               Insert new observations. This is a ugly way to maintain both self.observations
               and self.history_observations. Bear it for the moment.
@@ -328,7 +312,6 @@ class OCSort(object):
         alpha_fixed_emb=0.95,
         aw_param=0.5,
         embedding_off=False,
-        cmc_off=False,
         aw_off=False,
         new_kf_off=False,
         speed_prior=None,
@@ -351,10 +334,10 @@ class OCSort(object):
         self.aw_param = aw_param
         KalmanBoxTracker.count = 0
 
+        self.height, self.width = 0, 0
+
         self.embedder = ReIDDetectMultiBackend(weights=model_weights, device=device, fp16=fp16)
-        self.cmc = CMCComputer()
         self.embedding_off = embedding_off
-        self.cmc_off = cmc_off
         self.aw_off = aw_off
         self.new_kf_off = new_kf_off
 
@@ -368,13 +351,7 @@ class OCSort(object):
         Returns the a similar array, where the last column is the object ID.
         NOTE: The number of objects returned may differ from the number of detections provided.
         """
-        xyxys = dets[:, 0:4]
-        scores = dets[:, 4]
-        clss = dets[:, 5]
-
-        classes = clss.numpy()
-        xyxys = xyxys.numpy()
-        scores = scores.numpy()
+        scores = dets[:, 4].numpy()
 
         dets = dets[:, 0:6].numpy()
         remain_inds = scores > self.det_thresh
@@ -392,12 +369,6 @@ class OCSort(object):
             # (Ndets x X) [512, 1024, 2048]
             # dets_embs = self.embedder.compute_embedding(img_numpy, dets[:, :4], tag)
             dets_embs = self._get_features(dets[:, :4], img_numpy)
-
-        # CMC
-        if not self.cmc_off:
-            transform = self.cmc.compute_affine(img_numpy, dets[:, :4], tag)
-            for trk in self.trackers:
-                trk.apply_affine_correction(transform)
 
         trust = (dets[:, 4] - self.det_thresh) / (1 - self.det_thresh)
         af = self.alpha_fixed_emb
@@ -426,7 +397,7 @@ class OCSort(object):
         for t in reversed(to_del):
             self.trackers.pop(t)
 
-        velocities = np.array([trk.velocity if trk.velocity is not None else np.array((0, 0)) for trk in self.trackers])
+        velocities = np.array([trk.velocity if trk.velocity is not None else np.array((1, 0)) for trk in self.trackers])
         last_boxes = np.array([trk.last_observation for trk in self.trackers])
         k_observations = np.array([k_previous_obs(trk.observations, trk.age, self.delta_t) for trk in self.trackers])
 
@@ -549,5 +520,13 @@ class OCSort(object):
         return features
 
     def dump_cache(self):
-        self.cmc.dump_cache()
         self.embedder.dump_cache()
+
+
+@dataclass
+class TrackingConfig:
+    tracker_type: str
+    tracker_config: Optional[Path]
+    reid_weights: Path
+    device: str
+    half: bool

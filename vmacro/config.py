@@ -32,7 +32,7 @@ KEY_NOTE_MAP: dict[str, set[NoteClass]] = {
     # 'a': '', ';': '',  # fever, no detection needed, simply press regularly
 }
 
-FEVER_KEY = 'a'
+FEVER_KEY = ';'
 
 key_configs = {
     '4B': [
@@ -72,14 +72,11 @@ class TrackConfig:
     key: str
     bbox: np.ndarray
     note_classes: set[NoteClass]
-    avg_speed: float
-
-
-FALL_TIME = 1151  # 885 # 1130  # ms
+    note_lifetime: float
 
 
 class GameConfig:
-    def __init__(self, mode, location, note_lifetime=FALL_TIME):
+    def __init__(self, mode, location, note_lifetime):
         self.mode = mode
         self.location = location
         self.bbox = location_bbox[location]
@@ -113,7 +110,7 @@ class GameConfig:
                     key=key,
                     note_classes=KEY_NOTE_MAP[key],
                     bbox=np.array([track_start, self.bbox[1], track_end, self.bbox[3]]),
-                    avg_speed=self.bbox[3] / self.note_lifetime[j],
+                    note_lifetime=self.note_lifetime[j],
                 ))
                 track_start = track_end
                 j += 1

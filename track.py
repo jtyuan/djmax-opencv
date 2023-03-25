@@ -5,6 +5,7 @@ import time
 import cv2
 import trio
 
+from trackers.djocsort.ocsort import TrackingConfig
 from vmacro.config import GameConfig
 from vmacro.game import Game
 from vmacro.window_cap import LoadWindowScreenshots
@@ -114,8 +115,17 @@ def run(
     stride, names, pt = model.stride, model.names, model.pt
     imgsz = check_imgsz(imgsz, stride=stride)  # check image size
 
-    game = Game(GameConfig(game_mode, 'left', note_lifetime=note_lifetime), names)
+    t0 = time.perf_counter()
+    game = Game(
+        GameConfig(game_mode, 'left', note_lifetime=note_lifetime),
+        names,
+        TrackingConfig(tracking_method, tracking_config, reid_weights, device, half),
+    )
+    t1 = time.perf_counter()
+    print('load time', t1 - t0)
+    t0 = t1
     game.start()
+    print('start time', time.perf_counter() - t0)
 
     # Dataloader
     bs = 1
@@ -157,15 +167,6 @@ def run(
         )
     vid_path, vid_writer, txt_path = [None] * bs, [None] * bs, [None] * bs
     model.warmup(imgsz=(1 if pt or model.triton else bs, 3, *imgsz))  # warmup
-
-    # Create as many strong sort instances as there are video sources
-    tracker_list = []
-    for i in range(bs):
-        tracker = create_tracker(tracking_method, tracking_config, reid_weights, device, half)
-        tracker_list.append(tracker, )
-        if hasattr(tracker_list[i], 'model'):
-            if hasattr(tracker_list[i].model, 'warmup'):
-                tracker_list[i].model.warmup()
     outputs = [None] * bs
 
     # Run tracking
@@ -224,10 +225,6 @@ def run(
 
             annotator = Annotator(im0, line_width=line_thickness, example=str(names))
 
-            if hasattr(tracker_list[i], 'tracker') and hasattr(tracker_list[i].tracker, 'camera_update'):
-                if prev_frames[i] is not None and curr_frames[i] is not None:  # camera motion compensation
-                    tracker_list[i].tracker.camera_update(prev_frames[i], curr_frames[i])
-
             if det is not None and len(det):
                 if is_seg:
                     shape = im0.shape
@@ -246,29 +243,76 @@ def run(
                     n = (det[:, 5] == c).sum()  # detections per class
                     s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "  # add to string
 
-                if no_tracking:
-                    # det: [x1, y1, x2, y2, conf, class_id]
-                    game.process(det.cpu().numpy(), timestamp)
+                # for j, d in enumerate(det):
+                #     bbox = d[0:4]
+                #     conf = d[4]
+                #     cls = d[5]
+                #
+                #     if save_txt:
+                #         bbox_left = d[0]
+                #         bbox_top = d[1]
+                #         bbox_w = d[2] - d[0]
+                #         bbox_h = d[3] - d[1]
+                #         # Write MOT compliant results to file
+                #         with open(txt_path + '.txt', 'a') as f:
+                #             f.write(('%g ' * 7 + '\n') % (frame_idx + 1, bbox_left,
+                #                                           bbox_top, bbox_w, bbox_h, conf, cls))
+                #
+                #     if save_vid or save_crop or show_vid:  # Add bbox/seg to image
+                #         c = int(cls)  # integer class
+                #         label = None if hide_labels else (f'{names[c]}' if hide_conf else (
+                #                                                   f'{conf:.2f}' if hide_class else f'{names[c]} {conf:.2f}'))
+                #         color = colors(c, True)
+                #         annotator.box_label(bbox, label, color=color)
+                #
+                #         if save_crop:
+                #             txt_file_name = txt_file_name if (isinstance(path, list) and len(path) > 1) else ''
+                #             save_one_box(np.array(bbox, dtype=np.int16), imc,
+                #                          file=save_dir / 'crops' / txt_file_name / names[
+                #                              c] / f'{p.stem}.jpg', BGR=True)
+                #
+                #     # pass detections to strongsort
 
-                    for j, d in enumerate(det):
-                        bbox = d[0:4]
-                        conf = d[4]
-                        cls = d[5]
+                with dt[3]:
+                    # det: [x1, y1, x2, y2, conf, class_id]
+                    outputs[i] = game.process(det.cpu(), im0, timestamp)
+
+                # draw boxes for visualization
+                if len(outputs[i]) > 0:
+                    if is_seg:
+                        # Mask plotting
+                        annotator.masks(
+                            masks[i],
+                            colors=[colors(x, True) for x in det[:, 5]],
+                            im_gpu=torch.as_tensor(im0, dtype=torch.float16).to(device).permute(2, 0, 1).flip(
+                                0).contiguous() /
+                                   255 if retina_masks else im[i]
+                        )
+
+                    for j, (output) in enumerate(outputs[i]):
+
+                        bbox = output[0:4]
+                        id = output[4]
+                        cls = output[5]
+                        conf = output[6]
 
                         if save_txt:
-                            bbox_left = d[0]
-                            bbox_top = d[1]
-                            bbox_w = d[2] - d[0]
-                            bbox_h = d[3] - d[1]
+                            # to MOT format
+                            bbox_left = output[0]
+                            bbox_top = output[1]
+                            bbox_w = output[2] - output[0]
+                            bbox_h = output[3] - output[1]
                             # Write MOT compliant results to file
                             with open(txt_path + '.txt', 'a') as f:
-                                f.write(('%g ' * 7 + '\n') % (frame_idx + 1, bbox_left,
-                                                              bbox_top, bbox_w, bbox_h, conf, cls))
+                                f.write(('%g ' * 10 + '\n') % (frame_idx + 1, id, bbox_left,  # MOT format
+                                                               bbox_top, bbox_w, bbox_h, -1, -1, -1, i))
 
                         if save_vid or save_crop or show_vid:  # Add bbox/seg to image
                             c = int(cls)  # integer class
-                            label = None if hide_labels else (f'{names[c]}' if hide_conf else (
-                                                                      f'{conf:.2f}' if hide_class else f'{names[c]} {conf:.2f}'))
+                            id = int(id)  # integer id
+                            label = None if hide_labels else (f'{id} {names[c]}' if hide_conf else \
+                                                                  (
+                                                                      f'{id} {conf:.2f}' if hide_class else f'{id} {names[c]} {conf:.2f}'))
                             color = colors(c, True)
                             annotator.box_label(bbox, label, color=color)
 
@@ -276,63 +320,7 @@ def run(
                                 txt_file_name = txt_file_name if (isinstance(path, list) and len(path) > 1) else ''
                                 save_one_box(np.array(bbox, dtype=np.int16), imc,
                                              file=save_dir / 'crops' / txt_file_name / names[
-                                                 c] / f'{p.stem}.jpg', BGR=True)
-
-                else:
-                    # pass detections to strongsort
-                    with dt[3]:
-                        outputs[i] = tracker_list[i].update(det.cpu(), im0)
-
-                    # draw boxes for visualization
-                    if len(outputs[i]) > 0:
-                        # outputs[i]: list of [x1, y1, x2, y2, track_id, class_id, conf, queue]
-                        game.process(outputs[i])
-
-                        if is_seg:
-                            # Mask plotting
-                            annotator.masks(
-                                masks[i],
-                                colors=[colors(x, True) for x in det[:, 5]],
-                                im_gpu=torch.as_tensor(im0, dtype=torch.float16).to(device).permute(2, 0, 1).flip(
-                                    0).contiguous() /
-                                       255 if retina_masks else im[i]
-                            )
-
-                        for j, (output) in enumerate(outputs[i]):
-
-                            bbox = output[0:4]
-                            id = output[4]
-                            cls = output[5]
-                            conf = output[6]
-
-                            if save_txt:
-                                # to MOT format
-                                bbox_left = output[0]
-                                bbox_top = output[1]
-                                bbox_w = output[2] - output[0]
-                                bbox_h = output[3] - output[1]
-                                # Write MOT compliant results to file
-                                with open(txt_path + '.txt', 'a') as f:
-                                    f.write(('%g ' * 10 + '\n') % (frame_idx + 1, id, bbox_left,  # MOT format
-                                                                   bbox_top, bbox_w, bbox_h, -1, -1, -1, i))
-
-                            if save_vid or save_crop or show_vid:  # Add bbox/seg to image
-                                c = int(cls)  # integer class
-                                id = int(id)  # integer id
-                                label = None if hide_labels else (f'{id} {names[c]}' if hide_conf else \
-                                                                      (
-                                                                          f'{id} {conf:.2f}' if hide_class else f'{id} {names[c]} {conf:.2f}'))
-                                color = colors(c, True)
-                                annotator.box_label(bbox, label, color=color)
-
-                                if save_trajectories and tracking_method == 'strongsort':
-                                    q = output[7]
-                                    tracker_list[i].trajectory(im0, q, color=color)
-                                if save_crop:
-                                    txt_file_name = txt_file_name if (isinstance(path, list) and len(path) > 1) else ''
-                                    save_one_box(np.array(bbox, dtype=np.int16), imc,
-                                                 file=save_dir / 'crops' / txt_file_name / names[
-                                                     c] / f'{id}' / f'{p.stem}.jpg', BGR=True)
+                                                 c] / f'{id}' / f'{p.stem}.jpg', BGR=True)
 
             else:
                 pass
@@ -388,8 +376,8 @@ def parse_opt():
     parser.add_argument('--yolo-weights', nargs='+', type=Path, default=WEIGHTS / 'yolov8s-seg.pt',
                         help='model.pt path(s)')
     parser.add_argument('--reid-weights', type=Path, default=WEIGHTS / 'osnet_x0_25_msmt17.pt')
-    parser.add_argument('--tracking-method', type=str, default='deepocsort',
-                        help='deepocsort, botsort, strongsort, ocsort, bytetrack')
+    parser.add_argument('--tracking-method', type=str, default='djocsort',
+                        help='deepocsort, botsort, strongsort, ocsort, bytetrack, djocsort')
     parser.add_argument('--tracking-config', type=Path, default=None)
     parser.add_argument('--source', type=str, default='0', help='file/dir/URL/glob, 0 for webcam')
     parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[640], help='inference size h,w')

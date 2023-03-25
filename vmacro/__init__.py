@@ -1,77 +1,57 @@
-# from multiprocessing import Process
+# import time
+# from concurrent.futures import ThreadPoolExecutor
+# from multiprocessing import Process, Manager
+# from queue import Empty
 #
-# import keyboard
-# import trio
+# import numpy as np
 #
-#
-# async def child1():
-#     print("  child1: started! sleeping now...")
-#     async with trio.open_nursery() as nursery:
-#         # for i in range(26):
-#         #     print(f"parent: spawning child{i}...")
-#         nursery.start_soon(child3)
-#     await trio.sleep(1)
-#     print("  child1: exiting!")
+# from vmacro.track import KeyState
 #
 #
-# async def child2():
-#     print("  child2: started! sleeping now...")
-#     await trio.sleep(0)
-#     print("  child2: exiting!")
-#
-#
-# async def child3():
-#     print("  child3: started! sleeping now...")
-#     await trio.sleep(1)
-#     await trio.to_thread.run_sync(thread)
-#     print("  child3: exiting!")
-#
-#
-# def thread():
-#     print("  thread: started! sleeping now...")
-#     # time.sleep(10)
-#     keyboard.press_and_release('s')
-#     keyboard.press_and_release('s')
-#     keyboard.press_and_release('s')
-#     keyboard.press_and_release('s')
-#     keyboard.press_and_release('s')
-#     keyboard.press_and_release('s')
-#     keyboard.press_and_release('s')
-#     print("  thread: exiting!")
-#
-#
-# async def consumer(receive_channel):
-#     # The consumer uses an 'async for' loop to receive the values:
-#     async for value in receive_channel:
-#         print(f"got value {value!r}")
-#
-# class Game(Process):
-#
+# class Track:
 #     def __init__(self):
-#         super().__init__()
-#         send_channel, receive_channel = trio.open_memory_channel(0)
-#         self.send_channel = send_channel
-#         self.receive_channel = receive_channel
+#         self._key = 'ss'
+#         self._bbox = np.array([1, 2, 3, 4])
+#         self._note_classes = 'yoyo'
+#         self._last_executed = 0
+#         self._last_note = 1234
+#         self._status = KeyState.UP
+#         manager = Manager()
+#         self.queue = manager.Queue()
+#         self.cancelled = manager.Event()
 #
-#     async def parent(self):
-#         print("parent: started!")
-#         async with trio.open_nursery() as nursery:
-#             # for i in range(26):
-#             #     print(f"parent: spawning child{i}...")
-#             nursery.start_soon(consumer)
+#         self.p = Process(
+#             target=self._run,
+#             args=(self.cancelled, self.queue),
+#             daemon = True,
+#         )
+#         self.p.start()
 #
-#             print("parent: waiting for children to finish...")
-#             # -- we exit the nursery block here --
-#         print("parent: all done!")
+#     def stop(self):
+#         self.cancelled.set()
 #
-#     def run(self):
-#         trio.run(self.parent)
+#     def _run(self, cancelled, queue):
+#         while not cancelled.is_set():
+#             try:
+#                 t = queue.get(block=False)
+#             except Empty:
+#                 t = 'Empty'
+#             print(t, self._key, self._bbox, type(self._bbox), self._note_classes, self._last_executed, self._last_note, self._status)
+#             self._last_executed = time.time_ns()
+#             time.sleep(.5)
 #
-#
+# def fun(a, b):
+#     time.sleep(5)
+#     return pow(a, b)
 # if __name__ == '__main__':
-#     g = Game()
-#     g.start()
-#     for i in range(3):
-#         # The producer sends using 'await send_channel.send(...)'
-#         g.send_channel.send(f"message {i}")
-#     g.join()
+#     # track = Track()
+#     # time.sleep(1)
+#     # track.queue.put([1,2,3,4, {'haha'}])
+#     # time.sleep(5)
+#     # track.stop()
+#     # track.p.join()
+#     print('before')
+#     with ThreadPoolExecutor(max_workers=1) as executor:
+#         future = executor.submit(fun, 323, 1235)
+#         print(future.running())
+#     print(future.running())

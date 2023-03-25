@@ -11,6 +11,4 @@ except ValueError:
 
 _logger.add(sys.stdout, level="INFO")
 
-
-def init_logger():
-    _logger.add("runs/logs/log_{time}.log", level="DEBUG")
+_logger.add("runs/logs/log_{time}.log", level="DEBUG")

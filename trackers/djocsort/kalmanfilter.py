@@ -96,15 +96,15 @@ Copyright 2014-2018 Roger R Labbe Jr.
 
 from __future__ import absolute_import, division
 
-import pdb
+import sys
 from copy import deepcopy
 from math import log, exp, sqrt
-import sys
+
 import numpy as np
-from numpy import dot, zeros, eye, isscalar, shape
 import numpy.linalg as linalg
-from filterpy.stats import logpdf
 from filterpy.common import pretty_str, reshape_z
+from filterpy.stats import logpdf
+from numpy import dot, zeros, eye, isscalar, shape
 
 
 class KalmanFilterNew(object):
@@ -1123,7 +1123,7 @@ class KalmanFilterNew(object):
         filter's estimates. This formulation of the Fading memory filter
         (there are many) is due to Dan Simon [1]_.
         """
-        return self._alpha_sq**0.5
+        return self._alpha_sq ** 0.5
 
     def log_likelihood_of(self, z):
         """
@@ -1140,7 +1140,7 @@ class KalmanFilterNew(object):
         if not np.isscalar(value) or value < 1:
             raise ValueError("alpha must be a float greater than 1")
 
-        self._alpha_sq = value**2
+        self._alpha_sq = value ** 2
 
     def __repr__(self):
         return "\n".join(

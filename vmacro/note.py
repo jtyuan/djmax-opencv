@@ -13,7 +13,8 @@ NoteClass = Literal[
 
 @dataclass
 class Note:
-    id: int
     bbox: np.ndarray
     cls: NoteClass
     timestamp: float
+    speed: float
+    id: int = -1
