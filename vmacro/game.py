@@ -1,14 +1,13 @@
-import time
 import warnings
+from multiprocessing import Process, Queue
+from queue import Empty
 
 import keyboard
-import win32api
-import win32gui
-from apscheduler.executors.pool import ThreadPoolExecutor
+import trio
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from vmacro.config import GameConfig, CLICK_DELAY, FEVER_KEY
-from vmacro.logger import logger
+from vmacro.logger import logger, init_logger
 from vmacro.note import Note
 from vmacro.track import Track
 
@@ -18,89 +17,80 @@ warnings.filterwarnings(
 )
 
 
-class Game:
+class Game(Process):
     def __init__(self, config: GameConfig, class_names):
-        self._config = config
+        super().__init__()
+        self.daemon = True
+        self.cancelled = False
+
+        self._game_config = config
         self._class_names = class_names
 
         self._notes_history = {}
         self._scheduled_notes = set()
 
-        self._scheduler = BackgroundScheduler(executors={"default": ThreadPoolExecutor(96)})
-
+        self._scheduler = None
         self._min_hits = 1
 
+        self._tracks = []
+        self._task_queue = Queue()
+
+        # trio.to_thread.run_sync()
+
+    def run(self):
+        trio.run(self._worker)
+
+    async def _worker(self):
+        init_logger()
+        self._scheduler = BackgroundScheduler()  # executors={"default": ThreadPoolExecutor(96)})
+        # self._scheduler.add_job(self._fever, 'interval', seconds=1)
+        # self._scheduler.start()
         tracks = []
-        for track_config in config.track_configs:
+        for track_config in self._game_config.track_configs:
             tracks.append(Track(
                 config=track_config,
                 scheduler=self._scheduler,
             ))
         self._tracks = tracks
 
-        self._scheduler.add_job(self._fever, 'interval', seconds=1)
+        async with trio.open_nursery() as nursery:
+            while not self.cancelled:
+                try:
+                    dets, timestamp = await trio.to_thread.run_sync(self._get_data)
+                    for det in dets:
+                        nursery.start_soon(self._process_det, det, timestamp)
+                except Empty:
+                    ...
 
-        self._scheduler.start()
+    def _get_data(self):
+        return self._task_queue.get(timeout=1)
 
-    def _fever(self):
+    @staticmethod
+    def _fever():
         keyboard.press(FEVER_KEY)
-        win32api.Sleep(CLICK_DELAY)
+        trio.sleep(CLICK_DELAY)
         keyboard.release(FEVER_KEY)
 
-    def process(self, trks):
-        for trk in trks:
-            node_id = trk[4]
-            # print("processing: {}", trk)
-            if node_id not in self._scheduled_notes:
-                self._notes_history.setdefault(node_id, [])
-                bbox = trk[:4]
-                node_cls = self._class_names[trk[5]]
-                note = Note(
-                    id=node_id,
-                    bbox=bbox,
-                    cls=node_cls,
-                    timestamp=time.monotonic_ns(),
-                )
+    def process(self, dets, timestamp):
+        self._task_queue.put((dets, timestamp))
 
-                if len(self._notes_history[node_id]) > 0:
-                    # Note did not move
-                    logger.debug("{} {} {} {}", node_id, len(self._notes_history[node_id]),
-                                 self._notes_history[node_id][-1].bbox, note.bbox)
-                    if self._notes_history[node_id][-1].bbox[3] - note.bbox[3] <= 1e-6:
-                        del self._notes_history[node_id][-1]
+    async def _process_det(self, det, timestamp):
+        conf = det[4]
+        # print("processing: {}", det)1
+        bbox = det[:4]
+        node_cls = self._class_names[det[5]]
+        note = Note(
+            id=-1,
+            bbox=bbox,
+            cls=node_cls,
+            timestamp=timestamp,
+        )
+        # if note.bbox[3] <= self._config.bbox[3] * 0.1:
+        #     continue
 
-                self._notes_history[node_id].append(note)
-
-                # print("note: {}; hist len: {}", note, len(self._notes_history[node_id]))
-                if len(self._notes_history[node_id]) >= self._min_hits:
-                    self._scheduled_notes.add(node_id)
-                    track = self._assign_track(note)
-                    if track:
-                        first_note = self._notes_history[node_id][0]
-                        speed = (note.bbox[3] - first_note.bbox[3]) / (note.timestamp - first_note.timestamp) * 1e6
-                        logger.debug("observed speed: {}; pre-calculated speed:{}", speed, self._config.avg_speed)
-                        track.schedule(note)
-                    self._notes_history.pop(node_id)
-
-    def process_dets(self, dets, timestamp, perf_counter):
-        for det in dets:
-            conf = det[4]
-            # print("processing: {}", det)1
-            bbox = det[:4]
-            node_cls = self._class_names[det[5]]
-            note = Note(
-                id=-1,
-                bbox=bbox,
-                cls=node_cls,
-                timestamp=perf_counter,
-            )
-            # if note.bbox[3] <= self._config.bbox[3] * 0.1:
-            #     continue
-
-            # print("note: {}; hist len: {}", note, len(self._notes_history[node_id]))
-            track = self._assign_track(note)
-            if track:
-                track.schedule(note, timestamp)
+        track: Track = self._assign_track(note)
+        if track:
+            await track.schedule(note)
 
     def _assign_track(self, note: Note):
         result = None
@@ -111,5 +101,6 @@ class Game:
                 max_score = score
                 result = track
         if result is None:
-            logger.warning("Unable to assign track to note: {}", note)
+            logger.warning("Unable to assign track to note {}@[{}, {}]",
+                           note.cls, note.bbox[2], note.bbox[3])
         return result

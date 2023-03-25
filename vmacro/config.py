@@ -9,7 +9,7 @@ from vmacro.note import NoteClass
 CONTROL_DELAY = 210  # 280
 
 # delay (ms) for immediate releasing a key (key click)
-CLICK_DELAY = 50
+CLICK_DELAY = 50 / 1e3
 
 NOTE_CLASS_GROUP: dict[str, set[NoteClass]] = {
     'note': {'note', 'hold-start', 'hold-end'},

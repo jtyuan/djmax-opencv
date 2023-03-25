@@ -3,6 +3,7 @@ import os
 import time
 
 import cv2
+import trio
 
 from vmacro.config import GameConfig
 from vmacro.game import Game
@@ -114,6 +115,7 @@ def run(
     imgsz = check_imgsz(imgsz, stride=stride)  # check image size
 
     game = Game(GameConfig(game_mode, 'left', note_lifetime=note_lifetime), names)
+    game.start()
 
     # Dataloader
     bs = 1
@@ -171,8 +173,7 @@ def run(
     seen, windows, dt = 0, [], (Profile(), Profile(), Profile(), Profile())
     curr_frames, prev_frames = [None] * bs, [None] * bs
     for frame_idx, batch in enumerate(dataset):
-        timestamp = time.time_ns() / 1e9  # s
-        perf_counter = time.perf_counter()  # s
+        timestamp = time.perf_counter()  # s
         path, im, im0s, vid_cap, s = batch
         visualize = increment_path(save_dir / Path(path[0]).stem, mkdir=True) if visualize else False
         with dt[0]:
@@ -247,7 +248,7 @@ def run(
 
                 if no_tracking:
                     # det: [x1, y1, x2, y2, conf, class_id]
-                    game.process_dets(det.cpu().numpy(), timestamp, perf_counter)
+                    game.process(det.cpu().numpy(), timestamp)
 
                     for j, d in enumerate(det):
                         bbox = d[0:4]
