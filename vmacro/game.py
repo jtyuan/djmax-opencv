@@ -1,10 +1,14 @@
 import threading
 import time
 import warnings
+from concurrent.futures import ThreadPoolExecutor
+from multiprocessing import Manager
 
 import keyboard
 import numpy as np
 
+from trackers.djocsort.ocsort import TrackingConfig
+from trackers.djocsort.reid_multibackend import ReIDDetectMultiBackend
 from vmacro.config import GameConfig, CLICK_DELAY, FEVER_KEY
 from vmacro.logger import logger
 from vmacro.note import NoteClass
@@ -17,15 +21,22 @@ warnings.filterwarnings(
 
 
 class Game:
-    def __init__(self, config: GameConfig, class_names, tracking_config):
+    def __init__(self, config: GameConfig, class_names, tracking_config: TrackingConfig):
         self._game_config = config
         self._class_names = class_names
 
         tracks = []
+
+        manager = Manager()
+        reid_weights = tracking_config.reid_weights
+        device = tracking_config.device
+        embedder = ReIDDetectMultiBackend(weights=reid_weights, device=device, fp16=False)
         for track_config in self._game_config.track_configs:
             tracks.append(Track(
                 config=track_config,  # music/note track
                 tracking_config=tracking_config,  # tracking not track
+                manager=manager,
+                embedder=embedder,
             ))
         self._tracks: list[Track] = tracks
 
@@ -54,11 +65,23 @@ class Game:
             track: Track = self._assign_track(bbox, cls)
             track_index.setdefault(track, [])
             track_index[track].append(i)
-        for track, index in track_index.items():
-            track.update_tracker(detections[index], image, timestamp)
+        # with ThreadPoolExecutor(max_workers=len(track_index)) as executor:
+        #     futures = {
+        #         track: executor.submit(track.update_tracker, detections[index], image)
+        #         for track, index in track_index.items()
+        #     }
+        # outputs = []
+        # for track, future in futures.items():
+        #     result = future.result()
+        #     outputs.extend(result)
+        #     track.schedule(result, timestamp)
+
         outputs = []
-        for track in track_index.keys():
-            outputs.extend(track.get_tracking_results())
+        for track, index in track_index.items():
+            result = track.update_tracker(detections[index], image)
+            outputs.extend(result)
+            track.schedule(result, timestamp)
+
         return outputs
 
     def _assign_track(self, bbox: np.ndarray, cls: NoteClass):

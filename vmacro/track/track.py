@@ -10,7 +10,7 @@ from vmacro.track.tracking import TrackingWorker
 
 
 class Track:
-    def __init__(self, config: TrackConfig, tracking_config: TrackingConfig):
+    def __init__(self, config: TrackConfig, tracking_config: TrackingConfig, manager: Manager, embedder):
         from time import perf_counter
         self._key = config.key
         self._bbox = config.bbox
@@ -22,46 +22,36 @@ class Track:
         self._tracking_config = tracking_config
 
         t0 = perf_counter()
-        manager = Manager()
         self._cancelled = manager.Event()
-
-        self._dets_queue: Queue = manager.Queue()
-        self._trks_queue: Queue = manager.Queue()
         self._schedule_queue: Queue = manager.Queue()
-        print('Create workers', perf_counter() - t0)
 
         self._tracking_worker = TrackingWorker(
             note_speed=self._default_speed,
             tracking_config=tracking_config,
-            dets_queue=self._dets_queue,
-            trks_queue=self._trks_queue,
+            embedder=embedder,
+        )
+
+        self._control_worker = ControlWorker(
+            key=self._key,
+            note_speed=self._default_speed,
+            bbox=self._bbox,
             schedule_queue=self._schedule_queue,
             cancelled=self._cancelled,
         )
-        #
-        # self._control_worker = ControlWorker(
-        #     key=self._key,
-        #     note_speed=self._default_speed,
-        #     bbox=self._bbox,
-        #     schedule_queue=self._schedule_queue,
-        #     cancelled=self._cancelled,
-        # )
+        print('Create workers', perf_counter() - t0)
 
     def start(self):
-        pass
-        # self._tracking_worker.start()
-        # self._control_worker.start()
+        self._control_worker.start()
 
     def stop(self, timeout=None):
         self._cancelled.set()
-        self._tracking_worker.join(timeout)
         self._control_worker.join(timeout)
 
-    def update_tracker(self, dets, img, timestamp):
-        self._dets_queue.put((dets, img, timestamp))
+    def update_tracker(self, dets, img):
+        return self._tracking_worker.run(dets, img)
 
-    def get_tracking_results(self):
-        return self._trks_queue.get()
+    def schedule(self, trks, timestamp):
+        self._schedule_queue.put((trks, timestamp))
 
     def localize(self, bbox: np.ndarray, cls: NoteClass):
         nx1, _, nx2, _ = bbox

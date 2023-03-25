@@ -158,7 +158,7 @@ class KalmanBoxTracker(object):
             self.x_to_bbox_func = convert_x_to_bbox
 
         self.kf.x[:4] = self.bbox_to_z_func(bbox)
-        if speed_prior:
+        if speed_prior is not None and any(speed_prior):
             self.kf.x[4:] = np.array(speed_prior).reshape(-1, 1)
 
         self.time_since_update = 0
@@ -336,7 +336,7 @@ class OCSort(object):
 
         self.height, self.width = 0, 0
 
-        self.embedder = ReIDDetectMultiBackend(weights=model_weights, device=device, fp16=fp16)
+        self.embedder = kwargs.get('embedder', ReIDDetectMultiBackend(weights=model_weights, device=device, fp16=fp16))
         self.embedding_off = embedding_off
         self.aw_off = aw_off
         self.new_kf_off = new_kf_off
