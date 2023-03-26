@@ -23,7 +23,7 @@ class Track:
         self._note_classes = config.note_classes
 
         self._note_lifetime = config.note_lifetime
-        self._default_speed = self._bbox[3] / self._note_lifetime / 1e3
+        self._default_speed = self._bbox[3] / (self._note_lifetime / 1e3)
 
         self._dets_queue: Queue = manager.Queue()
         self._schedule_queue: Queue = manager.Queue()

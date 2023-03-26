@@ -104,7 +104,7 @@ def associate(detections, predictions, iou_threshold, *, logger):
         logger.debug(f"new offset from experience: {new_offset}")
 
     if new_offset is not None:
-        overlap_size = len(predictions) - new_offset
+        overlap_size = min(len(predictions) - new_offset, len(detections))
         if overlap_size > 0:
             det_indices = np.arange(0, overlap_size, dtype=int)
             pred_indices = det_indices + new_offset

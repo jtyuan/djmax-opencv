@@ -51,7 +51,7 @@ class TrackingWorker(Process):
 
         self._observations: dict[int, ObservationItem] = {}
 
-        # [x1, y1, x2, y2, det_conf, class_id, track_id, timestamp]
+        # [x1, y1, x2, y2, det_conf, class_id, track_id, timestamp, speed]
         self._dim_tracking = 9
         self._trackings = np.empty((0, self._dim_tracking))
         self._max_id = -1.0  # use float for consistency
@@ -75,7 +75,7 @@ class TrackingWorker(Process):
 
     def _update(self, dets: np.ndarray, timestamp: float):
         # det: [x1, y1, x2, y2, conf, class_id]
-        # trk: [x1, y1, x2, y2, det_conf, class_id, track_id, timestamp]
+        # trk: [x1, y1, x2, y2, det_conf, class_id, track_id, timestamp, speed]
         detections = dets[dets[:, 3].argsort()][::-1]  # sorted by bottom y
         track_ids = np.zeros(detections.shape[0], dtype=int)
         self._logger.debug(f"input detections: {detections}")
