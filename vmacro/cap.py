@@ -1,3 +1,5 @@
+import time
+
 import numpy as np
 from ultralytics.yolo.data.augment import LetterBox
 from ultralytics.yolo.utils.checks import check_requirements
@@ -5,7 +7,7 @@ from ultralytics.yolo.utils.checks import check_requirements
 
 class LoadScreenshots:
     # YOLOv8 screenshot dataloader, i.e. `python detect.py --source "screen 0 100 100 512 256"`
-    def __init__(self, source, imgsz=640, stride=32, auto=True, transforms=None):
+    def __init__(self, source, imgsz=640, stride=32, fps=20, auto=True, transforms=None):
         # source = [screen_number left top width height] (pixels)
         check_requirements('mss')
         import mss  # noqa
@@ -25,6 +27,8 @@ class LoadScreenshots:
         self.mode = 'stream'
         self.frame = 0
         self.sct = mss.mss()
+        self.sec_per_frame = 1.0 / fps
+        self.last_frame_at = 0
 
         # Parse monitor shape
         monitor = self.sct.monitors[self.screen]
@@ -38,13 +42,22 @@ class LoadScreenshots:
         return self
 
     def __next__(self):
+        now = time.perf_counter()
+        if self.last_frame_at > 0:
+            target = self.last_frame_at + self.sec_per_frame
+            diff = target - now
+            if diff > 0:
+                time.sleep(diff)
         # mss screen capture: get raw pixels from the screen as np array
         im0 = np.array(self.sct.grab(self.monitor))[:, :, :3]  # [:, :, :3] BGRA to BGR
+        self.last_frame_at = now
+        im0 = im0[:900, :600]
         s = f"screen {self.screen} (LTWH): {self.left},{self.top},{self.width},{self.height}: "
 
         if self.transforms:
             im = self.transforms(im0)  # transforms
         else:
+            # im0 = cv2.flip(im0, 0)
             im = LetterBox(self.imgsz, self.auto, stride=self.stride)(image=im0)
             im = im.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
             im = np.ascontiguousarray(im)  # contiguous

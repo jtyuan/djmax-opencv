@@ -1,8 +1,8 @@
-from multiprocessing import Manager, Queue
+import time
+from multiprocessing import Manager, Queue, Event
 
 import numpy as np
 
-from trackers.djocsort.ocsort import TrackingConfig
 from vmacro.config import TrackConfig
 from vmacro.note import NoteClass
 from vmacro.track.control import ControlWorker
@@ -10,25 +10,33 @@ from vmacro.track.tracking import TrackingWorker
 
 
 class Track:
-    def __init__(self, config: TrackConfig, tracking_config: TrackingConfig, manager: Manager, embedder):
-        from time import perf_counter
+    def __init__(
+        self,
+        config: TrackConfig,
+        manager: Manager,
+        trks_queue: Queue,
+        cancelled: Event,
+        log_key: str,
+    ):
         self._key = config.key
         self._bbox = config.bbox
         self._note_classes = config.note_classes
 
         self._note_lifetime = config.note_lifetime
-        self._default_speed = self._bbox[3] / self._note_lifetime
+        self._default_speed = self._bbox[3] / self._note_lifetime / 1e3
 
-        self._tracking_config = tracking_config
-
-        t0 = perf_counter()
-        self._cancelled = manager.Event()
+        self._dets_queue: Queue = manager.Queue()
         self._schedule_queue: Queue = manager.Queue()
 
         self._tracking_worker = TrackingWorker(
+            key=self._key,
+            bbox=self._bbox,
             note_speed=self._default_speed,
-            tracking_config=tracking_config,
-            embedder=embedder,
+            dets_queue=self._dets_queue,
+            trks_queue=trks_queue,
+            schedule_queue=self._schedule_queue,
+            cancelled=cancelled,
+            log_key=log_key,
         )
 
         self._control_worker = ControlWorker(
@@ -36,19 +44,29 @@ class Track:
             note_speed=self._default_speed,
             bbox=self._bbox,
             schedule_queue=self._schedule_queue,
-            cancelled=self._cancelled,
+            cancelled=cancelled,
+            log_key=log_key,
         )
-        print('Create workers', perf_counter() - t0)
 
     def start(self):
-        self._control_worker.start()
+        self._tracking_worker.start()
+        # self._control_worker.start()
 
-    def stop(self, timeout=None):
-        self._cancelled.set()
-        self._control_worker.join(timeout)
+    def stop(self, timeout=5):
+        for second in range(timeout):
+            if self._tracking_worker.is_alive() or self._control_worker.is_alive():
+                time.sleep(1)
+            else:
+                break
+        else:
+            # Force kill if not exited gracefully
+            self._tracking_worker.kill()
+            self._control_worker.kill()
+            self._tracking_worker.join(timeout=1)
+            self._control_worker.join(timeout=1)
 
-    def update_tracker(self, dets, img):
-        return self._tracking_worker.run(dets, img)
+    def update_tracker(self, dets: np.ndarray, timestamp: float):
+        self._dets_queue.put((dets, timestamp))
 
     def schedule(self, trks, timestamp):
         self._schedule_queue.put((trks, timestamp))

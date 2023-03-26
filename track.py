@@ -3,12 +3,10 @@ import os
 import time
 
 import cv2
-import trio
 
-from trackers.djocsort.ocsort import TrackingConfig
+from vmacro.cap import LoadScreenshots
 from vmacro.config import GameConfig
 from vmacro.game import Game
-from vmacro.window_cap import LoadWindowScreenshots
 
 # limit the number of cpus used by high performance libraries
 os.environ["OMP_NUM_THREADS"] = "1"
@@ -35,7 +33,7 @@ if str(ROOT / 'trackers' / 'strongsort') not in sys.path:
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
 from ultralytics.nn.autobackend import AutoBackend
-from ultralytics.yolo.data.dataloaders.stream_loaders import LoadImages, LoadStreams, LoadScreenshots
+from ultralytics.yolo.data.dataloaders.stream_loaders import LoadImages, LoadStreams
 from ultralytics.yolo.data.utils import VID_FORMATS
 from ultralytics.yolo.utils import LOGGER, colorstr
 from ultralytics.yolo.utils.checks import check_file, check_imgsz, check_imshow, print_args, check_requirements
@@ -45,55 +43,49 @@ from ultralytics.yolo.utils.ops import Profile, non_max_suppression, scale_boxes
     process_mask_native
 from ultralytics.yolo.utils.plotting import Annotator, colors, save_one_box
 
-from trackers.multi_tracker_zoo import create_tracker
-
 
 @torch.no_grad()
 def run(
-        source='0',
-        yolo_weights=WEIGHTS / 'yolov5m.pt',  # model.pt path(s),
-        reid_weights=WEIGHTS / 'osnet_x0_25_msmt17.pt',  # model.pt path,
-        tracking_method='strongsort',
-        tracking_config=None,
-        imgsz=(640, 640),  # inference size (height, width)
-        conf_thres=0.25,  # confidence threshold
-        iou_thres=0.45,  # NMS IOU threshold
-        max_det=1000,  # maximum detections per image
-        device='',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
-        show_vid=False,  # show results
-        save_txt=False,  # save results to *.txt
-        save_conf=False,  # save confidences in --save-txt labels
-        save_crop=False,  # save cropped prediction boxes
-        save_trajectories=False,  # save trajectories for each track
-        save_vid=False,  # save confidences in --save-txt labels
-        nosave=False,  # do not save images/videos
-        classes=None,  # filter by class: --class 0, or --class 0 2 3
-        agnostic_nms=False,  # class-agnostic NMS
-        augment=False,  # augmented inference
-        visualize=False,  # visualize features
-        update=False,  # update all models
-        project=ROOT / 'runs' / 'track',  # save results to project/name
-        name='exp',  # save results to project/name
-        exist_ok=False,  # existing project/name ok, do not increment
-        line_thickness=2,  # bounding box thickness (pixels)
-        hide_labels=False,  # hide labels
-        hide_conf=False,  # hide confidences
-        hide_class=False,  # hide IDs
-        half=False,  # use FP16 half-precision inference
-        dnn=False,  # use OpenCV DNN for ONNX inference
-        vid_stride=1,  # video frame-rate stride
-        retina_masks=False,
-        fullscreen=False,
-        game_mode='4B',
-        no_tracking=False,
-        note_lifetime=None,
+    source='0',
+    yolo_weights=WEIGHTS / 'yolov5m.pt',  # model.pt path(s),
+    imgsz=(640, 640),  # inference size (height, width)
+    conf_thres=0.25,  # confidence threshold
+    iou_thres=0.45,  # NMS IOU threshold
+    max_det=1000,  # maximum detections per image
+    device='',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
+    show_vid=False,  # show results
+    save_txt=False,  # save results to *.txt
+    save_conf=False,  # save confidences in --save-txt labels
+    save_crop=False,  # save cropped prediction boxes
+    save_trajectories=False,  # save trajectories for each track
+    save_vid=False,  # save confidences in --save-txt labels
+    nosave=False,  # do not save images/videos
+    classes=None,  # filter by class: --class 0, or --class 0 2 3
+    agnostic_nms=False,  # class-agnostic NMS
+    augment=False,  # augmented inference
+    visualize=False,  # visualize features
+    update=False,  # update all models
+    project=ROOT / 'runs' / 'track',  # save results to project/name
+    name='exp',  # save results to project/name
+    exist_ok=False,  # existing project/name ok, do not increment
+    line_thickness=2,  # bounding box thickness (pixels)
+    hide_labels=False,  # hide labels
+    hide_conf=False,  # hide confidences
+    hide_class=False,  # hide IDs
+    half=False,  # use FP16 half-precision inference
+    dnn=False,  # use OpenCV DNN for ONNX inference
+    vid_stride=1,  # video frame-rate stride
+    retina_masks=False,
+    fullscreen=False,
+    game_mode='4B',
+    no_tracking=False,
+    note_lifetime=None,
 ):
     source = str(source)
     save_img = not nosave and not source.endswith('.txt')  # save inference images
     is_file = Path(source).suffix[1:] in VID_FORMATS
     is_url = source.lower().startswith(('rtsp://', 'rtmp://', 'http://', 'https://'))
     webcam = not fullscreen and source.isnumeric() or source.endswith('.txt') or (is_url and not is_file)
-    is_window = not is_file and not is_url and not webcam
     if is_url and is_file:
         source = check_file(source)  # download
 
@@ -104,7 +96,6 @@ def run(
         exp_name = Path(yolo_weights[0]).stem
     else:  # multiple models after --yolo_weights
         exp_name = 'ensemble'
-    exp_name = name if name else exp_name + "_" + reid_weights.stem
     save_dir = increment_path(Path(project) / exp_name, exist_ok=exist_ok)  # increment run
     (save_dir / 'tracks' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
 
@@ -115,17 +106,8 @@ def run(
     stride, names, pt = model.stride, model.names, model.pt
     imgsz = check_imgsz(imgsz, stride=stride)  # check image size
 
-    t0 = time.perf_counter()
-    game = Game(
-        GameConfig(game_mode, 'left', note_lifetime=note_lifetime),
-        names,
-        TrackingConfig(tracking_method, tracking_config, reid_weights, device, half),
-    )
-    t1 = time.perf_counter()
-    print('load time', t1 - t0)
-    t0 = t1
+    game = Game(GameConfig(game_mode, 'left', note_lifetime=note_lifetime), names)
     game.start()
-    print('start time', time.perf_counter() - t0)
 
     # Dataloader
     bs = 1
@@ -148,14 +130,6 @@ def run(
             vid_stride=vid_stride
         )
         bs = len(dataset)
-    elif is_window:
-        dataset = LoadWindowScreenshots(
-            source,
-            imgsz=imgsz,
-            stride=stride,
-            auto=pt,
-            transforms=getattr(model.model, 'transforms', None),
-        )
     else:
         dataset = LoadImages(
             source,
@@ -167,6 +141,7 @@ def run(
         )
     vid_path, vid_writer, txt_path = [None] * bs, [None] * bs, [None] * bs
     model.warmup(imgsz=(1 if pt or model.triton else bs, 3, *imgsz))  # warmup
+
     outputs = [None] * bs
 
     # Run tracking
@@ -243,42 +218,16 @@ def run(
                     n = (det[:, 5] == c).sum()  # detections per class
                     s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "  # add to string
 
-                # for j, d in enumerate(det):
-                #     bbox = d[0:4]
-                #     conf = d[4]
-                #     cls = d[5]
-                #
-                #     if save_txt:
-                #         bbox_left = d[0]
-                #         bbox_top = d[1]
-                #         bbox_w = d[2] - d[0]
-                #         bbox_h = d[3] - d[1]
-                #         # Write MOT compliant results to file
-                #         with open(txt_path + '.txt', 'a') as f:
-                #             f.write(('%g ' * 7 + '\n') % (frame_idx + 1, bbox_left,
-                #                                           bbox_top, bbox_w, bbox_h, conf, cls))
-                #
-                #     if save_vid or save_crop or show_vid:  # Add bbox/seg to image
-                #         c = int(cls)  # integer class
-                #         label = None if hide_labels else (f'{names[c]}' if hide_conf else (
-                #                                                   f'{conf:.2f}' if hide_class else f'{names[c]} {conf:.2f}'))
-                #         color = colors(c, True)
-                #         annotator.box_label(bbox, label, color=color)
-                #
-                #         if save_crop:
-                #             txt_file_name = txt_file_name if (isinstance(path, list) and len(path) > 1) else ''
-                #             save_one_box(np.array(bbox, dtype=np.int16), imc,
-                #                          file=save_dir / 'crops' / txt_file_name / names[
-                #                              c] / f'{p.stem}.jpg', BGR=True)
-                #
-                #     # pass detections to strongsort
-
                 with dt[3]:
                     # det: [x1, y1, x2, y2, conf, class_id]
-                    outputs[i] = game.process(det.cpu(), im0, timestamp)
+                    # trk: [x1, y1, x2, y2, track_id, class_id, conf, timestamp]
+                    # outputs[i] = tracker_list[i].update(det.cpu(), im0, timestamp)
+                    outputs[i] = game.process(det.cpu(), timestamp)
 
                 # draw boxes for visualization
                 if len(outputs[i]) > 0:
+                    # game.process(outputs[i], timestamp)
+
                     if is_seg:
                         # Mask plotting
                         annotator.masks(
@@ -291,10 +240,11 @@ def run(
 
                     for j, (output) in enumerate(outputs[i]):
 
+                        # [x1, y1, x2, y2, det_conf, class_id, track_id, timestamp]
                         bbox = output[0:4]
-                        id = output[4]
+                        id = output[6]
                         cls = output[5]
-                        conf = output[6]
+                        conf = output[4]
 
                         if save_txt:
                             # to MOT format
@@ -362,7 +312,7 @@ def run(
     # Print results
     t = tuple(x.t / seen * 1E3 for x in dt)  # speeds per image
     LOGGER.info(
-        f'Speed: %.1fms pre-process, %.1fms inference, %.1fms NMS, %.1fms {tracking_method} update per image at shape {(1, 3, *imgsz)}' % t)
+        f'Speed: %.1fms pre-process, %.1fms inference, %.1fms NMS, %.1fms "djmax tracking" update per image at shape {(1, 3, *imgsz)}' % t)
     if save_txt or save_vid:
         s = f"\n{len(list((save_dir / 'tracks').glob('*.txt')))} tracks saved to {save_dir / 'tracks'}" if save_txt else ''
         LOGGER.info(f"Results saved to {colorstr('bold', save_dir)}{s}")
@@ -375,10 +325,6 @@ def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--yolo-weights', nargs='+', type=Path, default=WEIGHTS / 'yolov8s-seg.pt',
                         help='model.pt path(s)')
-    parser.add_argument('--reid-weights', type=Path, default=WEIGHTS / 'osnet_x0_25_msmt17.pt')
-    parser.add_argument('--tracking-method', type=str, default='djocsort',
-                        help='deepocsort, botsort, strongsort, ocsort, bytetrack, djocsort')
-    parser.add_argument('--tracking-config', type=Path, default=None)
     parser.add_argument('--source', type=str, default='0', help='file/dir/URL/glob, 0 for webcam')
     parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[640], help='inference size h,w')
     parser.add_argument('--conf-thres', type=float, default=0.5, help='confidence threshold')
@@ -411,12 +357,10 @@ def parse_opt():
     parser.add_argument('--retina-masks', action='store_true', help='whether to plot masks in native resolution')
     parser.add_argument('--fullscreen', action='store_true')
     parser.add_argument('--game-mode', type=str, default='4B', choices=['4B', '4X', '5B', '5X', '6B', '8B', 'XB'])
-    parser.add_argument('--no-tracking', action='store_true', help='play the game based only on detections')
     parser.add_argument('--note-lifetime', nargs='+', type=float, help='the lifetime (ms) for the note on each track '
                                                                        'from showing up to crossing the bottom line')
     opt = parser.parse_args()
     opt.imgsz *= 2 if len(opt.imgsz) == 1 else 1  # expand
-    opt.tracking_config = ROOT / 'trackers' / opt.tracking_method / 'configs' / (opt.tracking_method + '.yaml')
     print_args(vars(opt))
     return opt
 

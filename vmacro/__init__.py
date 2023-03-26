@@ -55,3 +55,21 @@
 #         future = executor.submit(fun, 323, 1235)
 #         print(future.running())
 #     print(future.running())
+from multiprocessing import Process, Manager
+
+
+class Test(Process):
+    def __init__(self, c):
+        super().__init__()
+        self.daemon = True
+        self.c = c
+
+    def run(self) -> None:
+        print(self.c.is_set(), flush=True)
+
+
+if __name__ == '__main__':
+    manager = Manager()
+    t = Test(c=manager.Event())
+    t.start()
+    t.join()
