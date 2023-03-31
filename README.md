@@ -44,6 +44,8 @@ python ./track.py \
   --fullscreen \
   --save-vid \
   --note-lifetime 1134 \
-  --game-mode 5X \
-  --no-tracking
+  --game-mode 5X
 ```
+
+`note_lifetime` is optional, but a good initial estimation
+can help the tracker warm up quickly.

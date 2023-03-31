@@ -1,15 +1,9 @@
 from dataclasses import dataclass
-from typing import Literal, Tuple
+from typing import Literal
 
 import numpy as np
 
 from vmacro.note import NoteClass
-
-# network delay (ms) for executing key control commands
-CONTROL_DELAY = 210  # 280
-
-# delay (ms) for immediate releasing a key (key click)
-CLICK_DELAY = 50 / 1e3
 
 NOTE_CLASS_GROUP: dict[str, set[NoteClass]] = {
     'note': {'note', 'hold-start', 'hold-end'},
@@ -30,6 +24,8 @@ KEY_NOTE_MAP: dict[str, set[NoteClass]] = {
     'e': NOTE_CLASS_GROUP['side'],
     'i': NOTE_CLASS_GROUP['side'],  # disk left and right (joystick down)
     # 'a': '', ';': '',  # fever, no detection needed, simply press regularly
+    '1': NOTE_CLASS_GROUP['extra'],
+    '2': NOTE_CLASS_GROUP['extra'],  # extra purple track for xb l2, r2
 }
 
 FEVER_KEY = ';'
@@ -49,22 +45,34 @@ key_configs = {
     ],
 }
 
-key_configs['4X'] = key_configs['4B'] + [['v', 'n']]
+x_keys = ['v', 'n']
+x2_keys = ['1', '2']
 
-key_configs['5X'] = key_configs['5B'] + [['v', 'n']]
+key_configs['4X'] = key_configs['4B'] + [x_keys]
 
-key_configs['8B'] = key_configs['6B'] + [['v', 'n']]
+key_configs['5X'] = key_configs['5B'] + [x_keys]
 
-key_configs['XB'] = key_configs['8B'] + [['1', '2']]
+key_configs['8B'] = key_configs['6B'] + [x_keys]
+
+key_configs['XB'] = key_configs['8B'] + [x2_keys]
 
 BoardLocation = Literal['left', 'middle', 'right']
 
-location_bbox: dict[BoardLocation, Tuple[float, float, float, float]] = {
-    'left': (80.0, 0.0, 560.0, 745.0),
-    # 'left': (102.0, 0.0, 494.0, 631.0),
-    'middle': (0.0, 0.0, 0.0, 0.0),
-    'right': (0.0, 0.0, 0.0, 0.0),
+KeyType = Literal['side', 'x', 'x2', 'normal']
+
+special_key_type_map: dict[str, KeyType] = {
+    key_configs['XB'][1][0]: 'side',
+    key_configs['XB'][1][1]: 'side',
+    key_configs['XB'][2][0]: 'x',
+    key_configs['XB'][2][1]: 'x',
+    key_configs['XB'][3][0]: 'x2',
+    key_configs['XB'][3][1]: 'x2',
 }
+
+frame_bbox: tuple[float, float, float, float] = (80.0, 0.0, 560.0, 745.0)
+
+
+# 'left': (102.0, 0.0, 494.0, 631.0),
 
 
 @dataclass
@@ -76,10 +84,9 @@ class TrackConfig:
 
 
 class GameConfig:
-    def __init__(self, mode, location, note_lifetime):
+    def __init__(self, mode, note_lifetime):
         self.mode = mode
-        self.location = location
-        self.bbox = location_bbox[location]
+        self.bbox = frame_bbox
 
         mode_key_num = sum(len(keys) for keys in key_configs[mode])
         if isinstance(note_lifetime, list):
@@ -120,6 +127,6 @@ class GameConfig:
 
 if __name__ == '__main__':
     # print(KEY_NOTE_MAP.keys())
-    config = GameConfig(mode='4B', location='left')
+    config = GameConfig(mode='4B')
     for t in config.track_configs:
         print(t.bbox)

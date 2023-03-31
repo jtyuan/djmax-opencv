@@ -1,3 +1,5 @@
+from collections import Counter
+
 import numpy as np
 
 
@@ -41,15 +43,8 @@ def iou_batch_y(bboxes1, bboxes2):
     return o
 
 
-def associate(detections, predictions, iou_threshold, *, logger):
-    if len(predictions) == 0:
-        return (
-            np.empty((0, 2), dtype=int),
-            np.arange(len(detections)),
-            np.empty((0, 5), dtype=int),
-        )
+def estimate_offset(detections, predictions, iou_threshold, *, logger):
 
-    logger.debug(f"associate predictions: {predictions}")
     iou_matrix: np.ndarray = iou_batch_y(detections, predictions)
 
     matched_indices = None
@@ -80,41 +75,134 @@ def associate(detections, predictions, iou_threshold, *, logger):
             matched_detections.add(m[0])
             matched_predictions.add(m[1])
 
-    new_offset = None
     if len(matches) > len(detections) / 2:
         # at lease half of detections are matched
         matches = np.array(matches, dtype=int)
         offsets = matches[:, 1] - matches[:, 0]
-        if np.all(offsets == offsets[0]):
+        if not np.all(offsets == offsets[0]):
             # offsets mismatch, rematch based on the most frequent offset
-            new_offset = np.argmax(np.bincount(offsets))
+            counter = Counter(list(offsets))
+            new_offset = counter.most_common(1)[0][0]
             logger.debug(f"new offset from iou matches: {new_offset}")
+            return new_offset
+        return offsets[0]
 
-    if new_offset is None:
-        # otherwise, estimate the offset based on simple assumptions:
-        #   1. new detections always above predicted notes
-        #   2. old detections (on the bottom, or right in the chart) are always covered in prediction
-        # +------detections---------+----offset------+
-        # |                                          |
-        # |----new dets----+-------predictions-------+
-        # offset = len(predictions) - len(detections) + len(new detections)
-        pred_top = predictions[-1, 1]
-        new_dets = detections[detections[:, 3] < pred_top]
-        new_offset = len(predictions) - len(detections) + len(new_dets)
-        logger.debug(f"new offset from experience: {new_offset}")
+    # otherwise, estimate the offset based on simple assumptions:
+    #   1. new detections always above predicted notes
+    #   2. old detections (on the bottom, or right in the chart) are always covered in prediction
+    # +------detections---------+----offset------+
+    # |                                          |
+    # |----new dets----+-------predictions-------+
+    # offset = len(predictions) - len(detections) + len(new detections)
+    h = predictions[-1, 3] - predictions[-1, 1]
+    pred_top = predictions[-1, 1]
+    new_dets = detections[detections[:, 3] < pred_top - h]
+    new_offset = len(predictions) - len(detections) + len(new_dets)
+    logger.debug(f"new offset from experience: {new_offset}")
+    return new_offset
 
-    if new_offset is not None:
-        overlap_size = min(len(predictions) - new_offset, len(detections))
-        if overlap_size > 0:
-            det_indices = np.arange(0, overlap_size, dtype=int)
-            pred_indices = det_indices + new_offset
-            matches = np.column_stack((det_indices, pred_indices))
-            matched_detections = set(det_indices)
-            matched_predictions = set(pred_indices)
+# def associate(detections, predictions, iou_threshold, *, logger):
+#     if len(predictions) == 0:
+#         return (
+#             np.empty((0, 2), dtype=np.ushort),
+#             np.arange(len(detections)),
+#             np.empty((0, 5), dtype=np.ushort),
+#         )
+#
+#
+#     logger.debug(f"associate predictions: {predictions}")
+#     if rematch_needed:
+#
+#         if new_offset is not None:
+#             overlap_size = min(len(predictions) - new_offset, len(detections))
+#             if overlap_size > 0:
+#                 det_indices = np.arange(0, overlap_size, dtype=np.ushort)
+#                 pred_indices = det_indices + new_offset
+#                 matches = np.column_stack((det_indices, pred_indices))
+#                 matched_detections = set(det_indices)
+#                 matched_predictions = set(pred_indices)
+#             else:
+#                 matches = np.empty((0, 2))
+#                 matched_detections = set()
+#                 matched_predictions = set()
+#
+#     for d, det in enumerate(detections):
+#         if d not in matched_detections:
+#             unmatched_detections.append(d)
+#
+#     for t, trk in enumerate(predictions):
+#         if t not in matched_predictions:
+#             unmatched_predictions.append(t)
+#
+#     logger.debug(f"final matches: {matches}; unmatched_dets: {unmatched_detections}; "
+#                  f"unmatched_preds: {unmatched_predictions}")
+#     return matches, np.array(unmatched_detections, dtype=np.ushort), np.array(unmatched_predictions, dtype=np.ushort)
+
+
+def distance(dets, preds,  logger):
+    n = min(len(dets), len(preds))
+    mean_y_dist = np.mean(np.abs(dets[:n, 3] - preds[:n, 3]))
+    if np.isnan(mean_y_dist):
+        logger.error(f"mean y dist nan: n={n}, len(dets)={len(dets)}, len(preds)={len(preds)}")
+        raise ValueError("Fuck")
+    if n > 1:
+        mean_gap_diff = np.mean(np.abs((dets[:n - 1, 1] - dets[1:n, 3]) - (preds[:n - 1, 1] - preds[1:n, 3])))
+    else:
+        mean_gap_diff = 0
+    if np.isnan(mean_gap_diff):
+        logger.error(f"mean gap diff nan: n={n}, len(dets)={len(dets)}, len(preds)={len(preds)}")
+        raise ValueError("Fuck")
+    return mean_y_dist + mean_gap_diff
+
+
+def associate_v2(detections, predictions, distance_threshold, *, logger):
+    if len(predictions) == 0:
+        return (
+            np.empty((0, 2), dtype=np.ushort),
+            np.arange(len(detections)),
+            np.empty(0, dtype=np.ushort),
+        )
+    if len(detections) == 0:
+        return (
+            np.empty((0, 2), dtype=np.ushort),
+            np.empty(0, dtype=np.ushort),
+            np.arange(len(predictions)),
+        )
+
+    logger.debug(f"associate predictions: {predictions}")
+
+    m, n = len(detections), len(predictions)
+    min_dist = float('inf')
+    best_offset = 0
+    for i in range(n + m - 1):
+        offset = i - (m - 1)
+        if offset < 0:  # detected but not tracked (rare)
+            dist = distance(detections[-offset:], predictions[0:], logger)
         else:
-            matches = np.empty((0, 2))
-            matched_detections = set()
-            matched_predictions = set()
+            dist = distance(detections[0:], predictions[offset:], logger)
+        if dist < min_dist:
+            min_dist = dist
+            best_offset = offset
+
+    if min_dist > distance_threshold:
+        logger.debug(f"associate: min distance {min_dist} > {distance_threshold}. Fallback to IoU.")
+        best_offset = estimate_offset(detections, predictions, 0.22, logger=logger)
+
+    logger.debug(f"associate: min distance {min_dist}, best offset {best_offset}")
+    if best_offset < 0:
+        overlap_num = min(m + best_offset, n)
+        pred_indices = np.arange(0, overlap_num, dtype=np.ushort)
+        det_indices = pred_indices - best_offset
+    else:
+        overlap_num = min(m, n - best_offset)
+        det_indices = np.arange(0, overlap_num, dtype=np.ushort)
+        pred_indices = det_indices + best_offset
+    matches = np.column_stack((det_indices, pred_indices))
+    matched_detections = set(det_indices)
+    matched_predictions = set(pred_indices)
+
+    unmatched_detections = []
+    unmatched_predictions = []
 
     for d, det in enumerate(detections):
         if d not in matched_detections:
@@ -126,12 +214,47 @@ def associate(detections, predictions, iou_threshold, *, logger):
 
     logger.debug(f"final matches: {matches}; unmatched_dets: {unmatched_detections}; "
                  f"unmatched_preds: {unmatched_predictions}")
-    return matches, np.array(unmatched_detections, dtype=int), np.array(unmatched_predictions, dtype=int)
+    return matches, np.array(unmatched_detections, dtype=np.ushort), np.array(unmatched_predictions, dtype=np.ushort)
 
 
 if __name__ == '__main__':
-    dets = np.array([[319, 261, 440, 289, 0.889, 2], [319, 64, 440, 91, 0.87867, 2]])
-    preds = np.array([[319, 258.81, 440, 286.81, 0.91107, 2, 0, 2.4248e+05, 1937.4],
-                      [319, 62.814, 441, 87.814, 0.90449, 2, 1, 2.4248e+05, 1937.4]])
-    from loguru import logger
-    print(associate(detections=dets, predictions=preds, iou_threshold=0.3, logger=logger))
+    # Test cases
+    from loguru import logger as _logger
+
+    dets = np.array([[80, 190, 159, 211, 0.91871, 2]])
+
+    preds = np.array([[80, 766.06, 159, 788.06, 0.801, 2, 0, 4.0982e+05, 706.83, 0],
+                      [80, 190.06, 159, 211.06, 0.90213, 2, 1, 4.0982e+05, 706.83, 1]])
+    print(associate_v2(dets, preds, 5, logger=_logger))
+
+    # dets = np.array([
+    #     [480, 611, 559, 632, 0.92417, 2],
+    #     [480, 563, 559, 584, 0.91245, 2],
+    #     [480, 251, 559, 272, 0.90828, 2],
+    #     [480, 203, 559, 224, 0.91417, 2],
+    # ])
+    # preds = np.array([
+    #     [480, 612.69, 559, 633.69, 0.9312, 2, 80, 3.3836e+05, 248.33, 0],
+    #     [480, 565.69, 559, 585.69, 0.91976, 2, 81, 3.3836e+05, 248.33, 1],
+    #     [480, 253.69, 559, 273.69, 0.91523, 2, 83, 3.3836e+05, 248.33, 2],
+    #     [480, 204.69, 559, 225.69, 0.90593, 2, 84, 3.3836e+05, 248.33, 3],
+    # ])
+    # print(associate_v2(dets, preds, 5, logger=_logger))
+    #
+    # dets = np.array([
+    #     [439, 661, 560, 685, 0.85351, 1],
+    #     [441, 327, 560, 351, 0.86538, 0],
+    # ])
+    # preds = np.array([
+    #     [439, 696.91, 560, 720.91, 0.85351, 1, 33, 3.3905e+05, 652.36, 0],
+    #     [441, 362.91, 560, 386.91, 0.86538, 0, 34, 3.3905e+05, 652.36, 1],
+    # ])
+    # print(associate_v2(dets, preds, 5, logger=_logger))
+    #
+    # dets = np.array([[441, 403, 560, 428, 0.85722, 0]])
+    # preds = np.array([
+    #     [441, 403, 560, 428, 0.85722, 0, 35, 3.3905e+05, 652.36],
+    #     [439, 661, 560, 685, 0.85351, 1, 33, 3.3905e+05, 652.36],
+    #     [439, 661, 560, 685, 0.85351, 0, 34, 3.3905e+05, 652.36],
+    # ])
+    # print(associate_v2(dets, preds, 5, logger=_logger))

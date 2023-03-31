@@ -1,21 +1,25 @@
 import atexit
+import threading
 import time
 import warnings
 from datetime import datetime
-from multiprocessing import Manager
+from queue import Queue
 
-import keyboard
 import numpy as np
+from pynput.keyboard import Controller
 
-from vmacro.config import GameConfig, CLICK_DELAY, FEVER_KEY
+from vmacro.config import GameConfig, FEVER_KEY
 from vmacro.logger import init_logger
 from vmacro.note import NoteClass
+from vmacro.track.control import CLICK_DELAY
 from vmacro.track.track import Track
 
 warnings.filterwarnings(
     "ignore",
     message="The localize method is no longer necessary, as this time zone supports the fold attribute",
 )
+
+keyboard = Controller()
 
 
 class Game:
@@ -28,29 +32,32 @@ class Game:
 
         tracks = []
 
-        manager = Manager()
-        self._trks_queue = manager.Queue()
-        self._cancelled = manager.Event()
+        self._trks_queue = Queue()
+        self._cancelled = threading.Event()
+        self._warmup_queue = Queue()
+        self._loop_complete_queue = Queue()
         for track_config in self._game_config.track_configs:
             tracks.append(Track(
                 config=track_config,  # music/note track
-                manager=manager,
+                warmup_queue=self._warmup_queue,
                 trks_queue=self._trks_queue,
+                loop_complete_queue=self._loop_complete_queue,
                 cancelled=self._cancelled,
                 log_key=self._log_key,
+                class_names=class_names,
             ))
         self._tracks: list[Track] = tracks
 
-        # fever_thread = threading.Thread(target=self._fever, daemon=True)
-        # fever_thread.start()
+        fever_thread = threading.Thread(target=self._fever, daemon=True)
+        fever_thread.start()
 
     def start(self):
         atexit.register(self.stop)
         for track in self._tracks:
             track.start()
-        for _ in self._tracks:
+        for _ in range(len(self._tracks) * 2):
             # Wait for all tracks to be ready
-            self._trks_queue.get()
+            self._warmup_queue.get()
         init_logger(self._log_key)
 
     def stop(self):
@@ -64,50 +71,39 @@ class Game:
             keyboard.press(FEVER_KEY)
             time.sleep(CLICK_DELAY)
             keyboard.release(FEVER_KEY)
-            time.sleep(1)
+            time.sleep(0.3)
 
-    def process(self, detections, timestamp):
+    def process(self, detections, im0, timestamp):
         # det: [x1, y1, x2, y2, conf, class_id]
+        t0 = time.perf_counter()
         track_det_indices = {}
         numpy_dets = detections.numpy()
         for i, det in enumerate(numpy_dets):
             bbox = det[:4]
             cls = self._class_names[det[5]]
-            track: Track = self._assign_track(bbox, cls)
+            if det[1] == 0 or det[0] > self._game_config.bbox[2]:
+                continue
+            track: Track = self._assign_track(bbox, cls, im0)
             if track:
                 track_det_indices.setdefault(track, [])
                 track_det_indices[track].append(i)
-        # with ThreadPoolExecutor(max_workers=len(track_det_indices)) as executor:
-        #     futures = {
-        #         track: executor.submit(track.update_tracker, detections[index], image)
-        #         for track, index in track_det_indices.items()
-        #     }
-        # outputs = []
-        # for track, future in futures.items():
-        #     result = future.result()
-        #     outputs.extend(result)
-        #     track.schedule(result, timestamp)
-
-        # outputs = []
-        # for track, index in track_det_indices.items():
-        #     result = track.update_tracker(detections[index], image)
-        #     outputs.extend(result)
-        #     track.schedule(result, timestamp)
 
         outputs = []
         for track, indices in track_det_indices.items():
-            track.update_tracker(numpy_dets[indices], timestamp)
+            track.update_tracker(numpy_dets[indices], im0, timestamp)
         for _ in track_det_indices:
             result = self._trks_queue.get()
-            self._logger.debug(f"track result received: {result}")
             outputs.extend(result)
+        for _ in track_det_indices:
+            self._loop_complete_queue.get()
+        self._logger.debug(f"Game loop done in {time.perf_counter() - t0}s")
         return outputs
 
-    def _assign_track(self, bbox: np.ndarray, cls: NoteClass):
+    def _assign_track(self, bbox: np.ndarray, cls: NoteClass, im0):
         result = None
         max_score = 0
         for track in self._tracks:
-            score = track.localize(bbox, cls)
+            score = track.localize(bbox, cls, im0)
             if score > max_score:
                 max_score = score
                 result = track

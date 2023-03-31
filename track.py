@@ -4,7 +4,7 @@ import time
 
 import cv2
 
-from vmacro.cap import LoadScreenshots
+from vmacro.cap import LoadScreenshots, LoadImages
 from vmacro.config import GameConfig
 from vmacro.game import Game
 
@@ -27,13 +27,10 @@ WEIGHTS = ROOT / 'weights'
 
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))  # add ROOT to PATH
-if str(ROOT / 'trackers' / 'strongsort') not in sys.path:
-    sys.path.append(str(ROOT / 'trackers' / 'strongsort'))  # add strong_sort ROOT to PATH
 
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
 from ultralytics.nn.autobackend import AutoBackend
-from ultralytics.yolo.data.dataloaders.stream_loaders import LoadImages, LoadStreams
 from ultralytics.yolo.data.utils import VID_FORMATS
 from ultralytics.yolo.utils import LOGGER, colorstr
 from ultralytics.yolo.utils.checks import check_file, check_imgsz, check_imshow, print_args, check_requirements
@@ -76,16 +73,14 @@ def run(
     dnn=False,  # use OpenCV DNN for ONNX inference
     vid_stride=1,  # video frame-rate stride
     retina_masks=False,
-    fullscreen=False,
     game_mode='4B',
-    no_tracking=False,
     note_lifetime=None,
 ):
     source = str(source)
     save_img = not nosave and not source.endswith('.txt')  # save inference images
     is_file = Path(source).suffix[1:] in VID_FORMATS
     is_url = source.lower().startswith(('rtsp://', 'rtmp://', 'http://', 'https://'))
-    webcam = not fullscreen and source.isnumeric() or source.endswith('.txt') or (is_url and not is_file)
+    is_screen = source == 'screen'
     if is_url and is_file:
         source = check_file(source)  # download
 
@@ -106,30 +101,19 @@ def run(
     stride, names, pt = model.stride, model.names, model.pt
     imgsz = check_imgsz(imgsz, stride=stride)  # check image size
 
-    game = Game(GameConfig(game_mode, 'left', note_lifetime=note_lifetime), names)
+    game = Game(GameConfig(game_mode, note_lifetime=note_lifetime), names)
     game.start()
 
     # Dataloader
     bs = 1
-    if fullscreen:
+    if is_screen:
         dataset = LoadScreenshots(
-            source='0 0 0 1920 1080',
+            source='0 00 0 600 900',
             imgsz=imgsz,
             stride=stride,
             auto=pt,
             transforms=getattr(model.model, 'transforms', None),
         )
-    elif webcam:
-        show_vid = check_imshow(warn=True)
-        dataset = LoadStreams(
-            source,
-            imgsz=imgsz,
-            stride=stride,
-            auto=pt,
-            transforms=getattr(model.model, 'transforms', None),
-            vid_stride=vid_stride
-        )
-        bs = len(dataset)
     else:
         dataset = LoadImages(
             source,
@@ -149,8 +133,7 @@ def run(
     seen, windows, dt = 0, [], (Profile(), Profile(), Profile(), Profile())
     curr_frames, prev_frames = [None] * bs, [None] * bs
     for frame_idx, batch in enumerate(dataset):
-        timestamp = time.perf_counter()  # s
-        path, im, im0s, vid_cap, s = batch
+        path, im, im0s, vid_cap, s, timestamp = batch
         visualize = increment_path(save_dir / Path(path[0]).stem, mkdir=True) if visualize else False
         with dt[0]:
             im = torch.from_numpy(im).to(device)
@@ -175,23 +158,16 @@ def run(
         # Process detections
         for i, det in enumerate(p):  # detections per image
             seen += 1
-            if webcam:  # bs >= 1
-                p, im0, _ = path[i], im0s[i].copy(), dataset.count
-                p = Path(p)  # to Path
-                s += f'{i}: '
-                txt_file_name = p.name
+            p, im0, _ = path, im0s.copy(), getattr(dataset, 'frame', 0)
+            p = Path(p)  # to Path
+            # video file
+            if source.endswith(VID_FORMATS):
+                txt_file_name = p.stem
                 save_path = str(save_dir / p.name)  # im.jpg, vid.mp4, ...
+            # folder with imgs
             else:
-                p, im0, _ = path, im0s.copy(), getattr(dataset, 'frame', 0)
-                p = Path(p)  # to Path
-                # video file
-                if source.endswith(VID_FORMATS):
-                    txt_file_name = p.stem
-                    save_path = str(save_dir / p.name)  # im.jpg, vid.mp4, ...
-                # folder with imgs
-                else:
-                    txt_file_name = p.parent.name  # get folder name containing current img
-                    save_path = str(save_dir / p.parent.name)  # im.jpg, vid.mp4, ...
+                txt_file_name = p.parent.name  # get folder name containing current img
+                save_path = str(save_dir / p.parent.name)  # im.jpg, vid.mp4, ...
             curr_frames[i] = im0
 
             txt_path = str(save_dir / 'tracks' / txt_file_name)  # im.txt
@@ -222,7 +198,7 @@ def run(
                     # det: [x1, y1, x2, y2, conf, class_id]
                     # trk: [x1, y1, x2, y2, track_id, class_id, conf, timestamp]
                     # outputs[i] = tracker_list[i].update(det.cpu(), im0, timestamp)
-                    outputs[i] = game.process(det.cpu(), timestamp)
+                    outputs[i] = game.process(det.cpu(), im0, timestamp)
 
                 # draw boxes for visualization
                 if len(outputs[i]) > 0:
@@ -282,7 +258,7 @@ def run(
                 if platform.system() == 'Linux' and p not in windows:
                     windows.append(p)
                     cv2.namedWindow(str(p), cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO)  # allow window resize (Linux)
-                    cv2.resizeWindow(str(p), im0.shape[1], im0.shape[0])
+                    cv2.resizeWindow(str(p), im0.shape[1], len(im0))
                 cv2.imshow(str(p), im0)
                 if cv2.waitKey(1) == ord('q'):  # 1 millisecond
                     exit()
@@ -298,7 +274,7 @@ def run(
                         w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
                         h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
                     else:  # stream
-                        fps, w, h = 30, im0.shape[1], im0.shape[0]
+                        fps, w, h = 30, im0.shape[1], len(im0)
                     save_path = str(Path(save_path).with_suffix('.mp4'))  # force *.mp4 suffix on results videos
                     vid_writer[i] = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
                 vid_writer[i].write(im0)
@@ -325,7 +301,7 @@ def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--yolo-weights', nargs='+', type=Path, default=WEIGHTS / 'yolov8s-seg.pt',
                         help='model.pt path(s)')
-    parser.add_argument('--source', type=str, default='0', help='file/dir/URL/glob, 0 for webcam')
+    parser.add_argument('--source', type=str, default='0', help='file/dir/URL/glob, screen for screen capture')
     parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[640], help='inference size h,w')
     parser.add_argument('--conf-thres', type=float, default=0.5, help='confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.5, help='NMS IoU threshold')
@@ -355,7 +331,6 @@ def parse_opt():
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
     parser.add_argument('--vid-stride', type=int, default=1, help='video frame-rate stride')
     parser.add_argument('--retina-masks', action='store_true', help='whether to plot masks in native resolution')
-    parser.add_argument('--fullscreen', action='store_true')
     parser.add_argument('--game-mode', type=str, default='4B', choices=['4B', '4X', '5B', '5X', '6B', '8B', 'XB'])
     parser.add_argument('--note-lifetime', nargs='+', type=float, help='the lifetime (ms) for the note on each track '
                                                                        'from showing up to crossing the bottom line')
