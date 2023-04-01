@@ -16,7 +16,7 @@ class Track:
         self,
         config: TrackConfig,
         warmup_queue: Queue,
-        trks_queue: Queue,
+        tracking_output_queue: Queue,
         loop_complete_queue: Queue,
         cancelled: Event,
         log_key: str,
@@ -30,7 +30,7 @@ class Track:
         self._default_speed = self._bbox[3] / (self._note_lifetime / 1e3)
 
         self._dets_queue: Queue = Queue()
-        self._schedule_queue: Queue = Queue()
+        self._control_input_queue: Queue = Queue()
         self._scheduled_queue: Queue = Queue()
         self._trigger_queue: Queue = Queue()
 
@@ -40,8 +40,8 @@ class Track:
             note_speed=self._default_speed,
             warmup_queue=warmup_queue,
             dets_queue=self._dets_queue,
-            trks_queue=trks_queue,
-            schedule_queue=self._schedule_queue,
+            tracking_output_queue=tracking_output_queue,
+            control_input_queue=self._control_input_queue,
             trigger_queue=self._trigger_queue,
             cancelled=cancelled,
             log_key=log_key,
@@ -53,7 +53,7 @@ class Track:
             note_speed=self._default_speed,
             bbox=self._bbox,
             warmup_queue=warmup_queue,
-            schedule_queue=self._schedule_queue,
+            control_input_queue=self._control_input_queue,
             trigger_queue=self._trigger_queue,
             loop_complete_queue=loop_complete_queue,
             cancelled=cancelled,
