@@ -75,6 +75,7 @@ def run(
     retina_masks=False,
     game_mode='4B',
     note_lifetime=None,
+    auto_fever=False,
 ):
     source = str(source)
     save_img = not nosave and not source.endswith('.txt')  # save inference images
@@ -101,7 +102,7 @@ def run(
     stride, names, pt = model.stride, model.names, model.pt
     imgsz = check_imgsz(imgsz, stride=stride)  # check image size
 
-    game = Game(GameConfig(game_mode, note_lifetime=note_lifetime), names)
+    game = Game(GameConfig(game_mode, auto_fever=True, note_lifetime=note_lifetime), names)
     game.start()
 
     # Dataloader
@@ -334,6 +335,7 @@ def parse_opt():
     parser.add_argument('--game-mode', type=str, default='4B', choices=['4B', '4X', '5B', '5X', '6B', '8B', 'XB'])
     parser.add_argument('--note-lifetime', nargs='+', type=float, help='the lifetime (ms) for the note on each track '
                                                                        'from showing up to crossing the bottom line')
+    parser.add_argument('--auto-fever', action='store_true', help='whether to trigger fever automatically')
     opt = parser.parse_args()
     opt.imgsz *= 2 if len(opt.imgsz) == 1 else 1  # expand
     print_args(vars(opt))

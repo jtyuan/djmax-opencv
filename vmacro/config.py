@@ -84,7 +84,7 @@ class TrackConfig:
 
 
 class GameConfig:
-    def __init__(self, mode, note_lifetime):
+    def __init__(self, mode, auto_fever: bool, note_lifetime):
         self.mode = mode
         self.bbox = frame_bbox
 
@@ -101,6 +101,7 @@ class GameConfig:
 
         self.track_configs = self._init_track_configs(mode, self.bbox[0], self.bbox[2])
         self.note_lifetime = note_lifetime
+        self.auto_fever = auto_fever
 
     def _init_track_configs(self, mode, start, end):
         length = end - start

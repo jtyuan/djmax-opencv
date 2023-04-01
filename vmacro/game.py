@@ -48,8 +48,9 @@ class Game:
             ))
         self._tracks: list[Track] = tracks
 
-        fever_thread = threading.Thread(target=self._fever, daemon=True)
-        fever_thread.start()
+        if config.auto_fever:
+            fever_thread = threading.Thread(target=self._fever, daemon=True)
+            fever_thread.start()
 
     def start(self):
         atexit.register(self.stop)
