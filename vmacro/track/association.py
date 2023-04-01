@@ -243,7 +243,7 @@ def associate_v3(detections, predictions, *, dist_threshold, logger):
 
     i, j = 0, 0
     m, n = len(detections), len(predictions)
-    last_j_matched = False
+    matched_predictions = set()
     while i < m and j < n:
         min_dist = float('inf')
         best_j = -1
@@ -257,23 +257,17 @@ def associate_v3(detections, predictions, *, dist_threshold, logger):
             matches.append((i, best_j))
             i += 1
             j = best_j  # + 1  # allow one i to match multiple j for detection error
-            last_j_matched = True
+            matched_predictions.add(j)
         elif detections[i, 3] > predictions[j, 3]:
             unmatched_detections.append(i)
             i += 1
         else:
-            if not last_j_matched:
-                unmatched_predictions.append(j)
             j += 1
-            last_j_matched = False
 
     # Add any remaining unmatched indices from both lists
     # logger.debug(f"{j}, {last_j_matched}, {n}, {list(range(1, 1))}")
     unmatched_detections.extend(range(i, m))
-    if last_j_matched:
-        unmatched_predictions.extend(range(j + 1, n))
-    else:
-        unmatched_predictions.extend(range(j, n))
+    unmatched_predictions = list(sorted(set(range(0, n)) - matched_predictions))
 
     logger.debug(f"final matches: {matches}; unmatched_dets: {unmatched_detections}; "
                  f"unmatched_preds: {unmatched_predictions}")
@@ -296,24 +290,33 @@ if __name__ == '__main__':
 # [79, 61.49, 199, 86.49, 0.91064, 2, 1, 7.6857e+05, 1009.5, 1]])
 #     _logger.debug(associate_v3(dets, preds, dist_threshold=20, logger=_logger))
 
-    dets = np.array([[319, 323, 559, 357, 0.80083, 4], [320, 24, 560, 45, 0.73777, 3]])
-    preds = np.array([[320, 325.49, 559, 355.49, 0.80145, 4, 0, 7.7479e+05, 838.96, 0]])
-    _logger.debug(associate_v3(dets, preds, dist_threshold=20, logger=_logger))
+    # dets = np.array([[319, 323, 559, 357, 0.80083, 4], [320, 24, 560, 45, 0.73777, 3]])
+    # preds = np.array([[320, 325.49, 559, 355.49, 0.80145, 4, 0, 7.7479e+05, 838.96, 0]])
+    # _logger.debug(associate_v3(dets, preds, dist_threshold=20, logger=_logger))
 
-    dets = np.array([
-        [480, 611, 559, 632, 0.92417, 2],
-        [480, 563, 559, 584, 0.91245, 2],
-        [480, 563, 559, 584, 0.91245, 2],
-        [480, 251, 559, 272, 0.90828, 2],
-        [480, 203, 559, 224, 0.91417, 2],
-        [480, 203, 559, 224, 0.91417, 2],
-    ])
-    dets_iou = np.triu(iou_batch_y(dets, dets), 1)
-    print(dets_iou)
-    if min(dets_iou.shape) > 0:
-        a = (dets_iou > 0.3).astype(np.int32)
-        duplicate_indices = np.stack(np.where(a), axis=1)
-        print(duplicate_indices)
+    dets = np.array([[367, 462, 465, 486, 0.91449, 2]
+, [367, 294, 465, 318, 0.90867, 2]
+, [367, 126, 464, 150, 0.93253, 2]])
+    preds = np.array([[369, 625.17, 465, 649.17, 0.92434, 2, 233, 7.7672e+05, 1023.4, 0]
+, [368, 457.17, 465, 481.17, 0.91135, 2, 234, 7.7672e+05, 1023.4, 1]
+, [367, 289.17, 464, 314.17, 0.93293, 2, 235, 7.7672e+05, 1023.4, 2]
+, [367, 121.17, 464, 145.17, 0.91706, 2, 236, 7.7672e+05, 1023.4, 3]])
+    _logger.debug(associate_v3(dets, preds, dist_threshold=20, logger=_logger))
+    #
+    # dets = np.array([
+    #     [480, 611, 559, 632, 0.92417, 2],
+    #     [480, 563, 559, 584, 0.91245, 2],
+    #     [480, 563, 559, 584, 0.91245, 2],
+    #     [480, 251, 559, 272, 0.90828, 2],
+    #     [480, 203, 559, 224, 0.91417, 2],
+    #     [480, 203, 559, 224, 0.91417, 2],
+    # ])
+    # dets_iou = np.triu(iou_batch_y(dets, dets), 1)
+    # print(dets_iou)
+    # if min(dets_iou.shape) > 0:
+    #     a = (dets_iou > 0.3).astype(np.int32)
+    #     duplicate_indices = np.stack(np.where(a), axis=1)
+    #     print(duplicate_indices)
     # preds = np.array([
     #     [480, 612.69, 559, 633.69, 0.9312, 2, 80, 3.3836e+05, 248.33, 0],
     #     [480, 565.69, 559, 585.69, 0.91976, 2, 81, 3.3836e+05, 248.33, 1],
