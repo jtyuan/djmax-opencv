@@ -102,14 +102,14 @@ def run(
     stride, names, pt = model.stride, model.names, model.pt
     imgsz = check_imgsz(imgsz, stride=stride)  # check image size
 
-    game = Game(GameConfig(game_mode, auto_fever=True, note_lifetime=note_lifetime), names)
+    game = Game(GameConfig(game_mode, auto_fever=auto_fever, note_lifetime=note_lifetime), names)
     game.start()
 
     # Dataloader
     bs = 1
     if is_screen:
         dataset = LoadScreenshots(
-            source='0 00 0 600 900',
+            source='0 00 0 600 1080',
             imgsz=imgsz,
             stride=stride,
             auto=pt,

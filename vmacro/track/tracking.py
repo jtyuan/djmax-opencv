@@ -107,14 +107,15 @@ class TrackingWorker(threading.Thread):
         dets_iou = np.triu(iou_batch_y(detections, detections), 1)
         a = (dets_iou > 0.3).astype(np.int32)
         overlapped_indices = np.stack(np.where(a), axis=1)
-        class_ids = [[] for _ in range(len(detections) - len(overlapped_indices))]
-        rows_to_del = []
+        class_ids = [[] for _ in range(len(detections))]
+        rows_to_del = set()
         for i, j in overlapped_indices:
             # Record ids of duplicated rows
-            class_ids[i].append(detections[j, 5])
-            rows_to_del.append(j)
+            if i not in rows_to_del:
+                class_ids[i].append(detections[j, 5])
+                rows_to_del.add(j)
         # Remove duplication
-        detections = np.delete(detections, rows_to_del, axis=0)
+        detections = np.delete(detections, list(rows_to_del), axis=0)
         for i, det in enumerate(detections):
             # Record ids of unique rows
             class_ids[i].append(det[5])
@@ -129,7 +130,7 @@ class TrackingWorker(threading.Thread):
         matched, unmatched_dets, unmatched_preds = associate_v3(
             detections,
             predictions,
-            dist_threshold=40,
+            dist_threshold=60,
             logger=self._logger
         )
 
@@ -168,14 +169,14 @@ class TrackingWorker(threading.Thread):
             axis=1
         )
 
+        new_trackings[:len(detections), 7] = timestamp
+        new_trackings[:len(detections), 8] = self._note_speed
+
         new_index = len(detections)
         for pred_index in unmatched_preds:
             new_trackings[new_index] = self._trackings[int(predictions[pred_index, 9])]  # predictions[index, :9]  #
             self._observations[int(new_trackings[new_index][6])].hit_streak = 0
             new_index += 1
-
-        new_trackings[:, 7] = timestamp
-        new_trackings[:, 8] = self._note_speed
 
         # sort the new trackings and save to instance
         self._trackings = new_trackings[new_trackings[:, 3].argsort()][::-1]
@@ -209,22 +210,7 @@ class TrackingWorker(threading.Thread):
         return tracking_indices, np.empty((0, self._dim_tracking))
 
     def _post_update(self, timestamp):
-        # total_dist = 0
-        # total_time = 0
         to_del = self._observations.keys() - set(self._trackings[:, 6])
-        # for observation in self._observations.keys():
-        #     if timestamp - observation.last_timestamp > self._observation_ttl:
-        #         self._logger.debug(
-        #             f"Removing out-of-date tracking: {observation.track_id} "
-        #             f"{observation.last_bbox}"
-        #         )
-        #         to_del.append(observation.track_id)
-        #     # total_dist += observation.last_bbox[3] - observation.first_bbox[3]
-        #     # total_time += observation.last_timestamp - observation.first_timestamp
 
         for track_id in to_del:
             self._observations.pop(track_id)
-
-        # if total_dist > 0 and total_time > 0:
-        #     self._note_speed = self._note_speed * 0.1 + (total_dist / total_time) * 0.9
-        #     self._logger.debug(f"Track {self._key} speed updated to {self._note_speed}")

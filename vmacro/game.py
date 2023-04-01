@@ -80,9 +80,12 @@ class Game:
         track_det_indices = {}
         numpy_dets = detections.numpy()
         for i, det in enumerate(numpy_dets):
+            conf = det[4]
+            if conf < 0.7:
+                continue
             bbox = det[:4]
             cls = self._class_names[det[5]]
-            if det[1] == 0 or det[0] > self._game_config.bbox[2] or det[3] >= self._game_config.bbox[3]:
+            if det[1] == 0 or det[0] > self._game_config.bbox[2] or det[3] >= 336:
                 continue
             track: Track = self._assign_track(bbox, cls, im0)
             if track:

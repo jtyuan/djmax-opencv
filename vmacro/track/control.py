@@ -1,6 +1,5 @@
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from enum import Enum
 from queue import Empty, Queue
@@ -15,7 +14,7 @@ from vmacro.note import Note, NoteClass
 from vmacro.track.priority_queue import PriorityQueue
 
 # network delay (ms) for executing key control commands
-CONTROL_DELAY = 210 / 1e3  # 280
+CONTROL_DELAY = 180 / 1e3  # 280
 
 # delay (ms) for immediate releasing a key (key click)
 CLICK_DELAY = 50 / 1e3
@@ -129,7 +128,13 @@ class ControlWorker(Thread):
                     if SCHEDULE_RANGE[0] <= note_top <= SCHEDULE_RANGE[1]:
                         now = time.perf_counter()
                         detection_delay = now - note.timestamp
-                        fixed_delay = max(delay - detection_delay, 0)
+                        offset = 0
+                        # Unstable, but more combos
+                        # if note.cls.endswith("start"):
+                        #     offset = -0.02
+                        # elif note.cls.endswith("end"):
+                        #     offset = 0.04
+                        fixed_delay = max(delay - detection_delay + offset, 0)
                         target_time = now + fixed_delay
 
                         if note.cls in {'hold-start', 'side-start', 'tbstart', 'xstart'}:
@@ -224,7 +229,7 @@ class ControlWorker(Thread):
                     remaining_time <= STATUS_RESET_THRESHOLD
                     and self._last_note
                     and self._status is KeyState.DOWN
-                    and schedule.action in {KeyAction.KEYDOWN, KeyAction.KEYPRESS}
+                    and schedule.action in {KeyAction.KEYPRESS}
                 ):
                     self.keyup(self._last_note.id)
 

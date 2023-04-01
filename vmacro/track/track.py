@@ -90,11 +90,6 @@ class Track:
         overlap = max(0, x2 - x1)
         score = overlap / (nx2 - nx1 + tx2 - tx1 - overlap)
 
-        # if self._key_type in {'x', 'x2'}:
-        #     key_type = self._det_cleaner.get_key_type(bbox, im0)
-        #     logger.info(f"KeyType: {self._key_type} vs {key_type}")
-        #     score += 1 if key_type == self._key_type else -1
-
         return score
 
     def __hash__(self):

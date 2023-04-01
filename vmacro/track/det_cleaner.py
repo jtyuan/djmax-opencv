@@ -97,27 +97,41 @@ class DetCleaner:
         bboxes_below[:, 2] -= x1_offset
         bboxes_below[:, 3] = np.clip(bboxes_below[:, 3] + 2 * y_offset, frame_bbox[1], frame_bbox[3])
 
+        return dets
+        to_del = []
         for i, det in enumerate(dets):
             # det: [x1, y1, x2, y2, conf, class_id]
-            if det[5] not in self._normal_ids:
-                continue
+            # if det[5] not in self._normal_ids:
+            #     continue
 
             new_cls = None
+
+            has_below = False
+            has_above = False
+
             if bboxes_below[i][1] < bboxes_below[i][3] and bboxes_below[i][0] < bboxes_below[i][2]:
                 crop_below = im0[bboxes_below[i][1]:bboxes_below[i][3], bboxes_below[i][0]:bboxes_below[i][2]]
-                if self._color_in_range(crop_below, boundary[0], boundary[1]):
-                    new_cls = self._end_id_map[key_type]
+                has_below = self._color_in_range(crop_below, boundary[0], boundary[1])
 
             if bboxes_above[i][1] < bboxes_above[i][3] and bboxes_above[i][0] < bboxes_above[i][2]:
                 crop_above = im0[bboxes_above[i][1]:bboxes_above[i][3], bboxes_above[i][0]:bboxes_above[i][2]]
-                if self._color_in_range(crop_above, boundary[0], boundary[1]):
-                    new_cls = self._start_id_map[key_type]
+                has_above = self._color_in_range(crop_above, boundary[0], boundary[1])
+
+            if has_below and has_above:
+                # Middle of hold, shouldn't do anything
+                to_del.append(i)
+            elif has_below:
+                new_cls = self._end_id_map[key_type]
+            elif has_above:
+                new_cls = self._start_id_map[key_type]
+            # elif key_type in self._normal_id_map:
+            #     new_cls = self._normal_id_map[key_type]
 
             if new_cls:
                 logger.debug(f"Update detection class: {det[5]} -> {new_cls} (det: {det})")
                 det[5] = new_cls
 
-        return dets
+        return np.delete(dets, to_del, axis=0)
 
     def get_key_type(self, bbox, im0) -> KeyType:
         """Check cropped area in the given box to see if a note is an x or x2 note."""

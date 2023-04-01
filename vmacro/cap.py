@@ -3,6 +3,7 @@ import os
 import time
 from pathlib import Path
 
+import cv2
 import numpy as np
 from ultralytics.yolo.data.augment import LetterBox
 from ultralytics.yolo.data.utils import IMG_FORMATS, VID_FORMATS
@@ -165,14 +166,13 @@ class LoadScreenshots:
         self.frame += 1
         return str(self.screen), im, im0, None, s, now  # screen, img, original img, im0s, s
 
-
-if __name__ == '__main__':
-    l = LoadScreenshots('0 0 0 1920 1080')
-    import cv2
-
-    while True:
-        for t in l:
-            img = cv2.flip(t[2], 0)
-            cv2.imshow('test2', img)
-            if cv2.waitKey(1) == ord('q'):  # 1 millisecond
-                exit()
+# if __name__ == '__main__':
+#     l = LoadScreenshots('0 0 0 1920 1080')
+#     import cv2
+#
+#     while True:
+#         for t in l:
+#             img = cv2.flip(t[2], 0)
+#             cv2.imshow('test2', img)
+#             if cv2.waitKey(1) == ord('q'):  # 1 millisecond
+#                 exit()
