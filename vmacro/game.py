@@ -32,7 +32,7 @@ class Game:
 
         tracks = []
 
-        self._trks_queue = Queue()
+        self._output_queue = Queue()
         self._cancelled = threading.Event()
         self._warmup_queue = Queue()
         self._loop_complete_queue = Queue()
@@ -40,7 +40,7 @@ class Game:
             tracks.append(Track(
                 config=track_config,  # music/note track
                 warmup_queue=self._warmup_queue,
-                trks_queue=self._trks_queue,
+                tracking_output_queue=self._output_queue,
                 loop_complete_queue=self._loop_complete_queue,
                 cancelled=self._cancelled,
                 log_key=self._log_key,
@@ -81,7 +81,7 @@ class Game:
         for i, det in enumerate(numpy_dets):
             bbox = det[:4]
             cls = self._class_names[det[5]]
-            if det[1] == 0 or det[0] > self._game_config.bbox[2]:
+            if det[1] == 0 or det[0] > self._game_config.bbox[2] or det[3] >= self._game_config.bbox[3]:
                 continue
             track: Track = self._assign_track(bbox, cls, im0)
             if track:
@@ -92,7 +92,7 @@ class Game:
         for track, indices in track_det_indices.items():
             track.update_tracker(numpy_dets[indices], im0, timestamp)
         for _ in track_det_indices:
-            result = self._trks_queue.get()
+            result = self._output_queue.get()
             outputs.extend(result)
         for _ in track_det_indices:
             self._loop_complete_queue.get()
@@ -107,7 +107,7 @@ class Game:
             if score > max_score:
                 max_score = score
                 result = track
-        if result is None:
-            self._logger.warning("Unable to assign track to note {}@[{}, {}]",
-                                 cls, bbox[2], bbox[3])
+        # if result is None:
+        #     self._logger.warning("Unable to assign track to note {}@[{}, {}]",
+        #                          cls, bbox[2], bbox[3])
         return result

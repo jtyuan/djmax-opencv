@@ -18,3 +18,6 @@ class Note:
     timestamp: float
     speed: float
     id: int = -1
+
+    def __eq__(self, other: 'Note'):
+        return self.id == other.id
